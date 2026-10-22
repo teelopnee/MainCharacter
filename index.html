@@ -1,0 +1,2434 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Main Character</title>
+<meta name="description" content="AI social-media role-play: make a persona, get followed, go viral or get cancelled.">
+<meta name="theme-color" id="themeColor" content="#FFFFFF">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Main Character">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Figtree:wght@400;500;600;700&display=swap">
+<style>html,body{margin:0}:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}[hidden]{display:none!important}img{max-width:100%}</style>
+<style>
+/* Layout: a single phone-width column (max 480px) — sticky top bar, scrolling feed, fixed tab bar; sheets slide up from the bottom. */
+:root{
+  --bg:#FAF7F8; --surface:#FFFFFF; --surface-2:#F3EEF1; --line:#E8DFE4; --fg:#1B1418; --muted:#6E6168;
+  --accent:#E8285F; --accent-ink:#FFFFFF; --accent-soft:#FDE3EB; --blue:#2F6BFF; --gold:#C98A06; --gold-soft:#FFF1CF;
+  --good:#18915A; --bad:#D33636; --violet:#6D4DF2; --violet-soft:#ECE7FF; --shadow:0 10px 30px rgba(40,10,25,.14);
+  --font-display:"Bricolage Grotesque","Avenir Next",system-ui,sans-serif; --font-body:"Figtree","Segoe UI",system-ui,sans-serif;
+  --r:14px; --col:480px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#141013; --surface:#1C171B; --surface-2:#251E24; --line:#352B33; --fg:#F6EEF2; --muted:#A8979F;
+  --accent:#FF4D84; --accent-ink:#1A0710; --accent-soft:#3D1627; --blue:#7A9DFF; --gold:#F1B93A; --gold-soft:#3A2C0C;
+  --good:#3CC487; --bad:#FF6B6B; --violet:#A894FF; --violet-soft:#2A2340; --shadow:0 10px 30px rgba(0,0,0,.5); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#141013; --surface:#1C171B; --surface-2:#251E24; --line:#352B33; --fg:#F6EEF2; --muted:#A8979F;
+  --accent:#FF4D84; --accent-ink:#1A0710; --accent-soft:#3D1627; --blue:#7A9DFF; --gold:#F1B93A; --gold-soft:#3A2C0C;
+  --good:#3CC487; --bad:#FF6B6B; --violet:#A894FF; --violet-soft:#2A2340; --shadow:0 10px 30px rgba(0,0,0,.5); color-scheme:dark}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--font-body);font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--surface)}
+button,input,textarea,select{font:inherit;color:inherit}
+button{cursor:pointer;border:0;background:none;padding:0}
+button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:8px}
+.gut{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+#app{height:100%;max-width:var(--col);margin:0 auto;background:var(--surface);border-left:1px solid var(--line);border-right:1px solid var(--line);display:flex;flex-direction:column;position:relative;overflow:hidden}
+.scroll{flex:1;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
+h1,h2,h3{font-family:var(--font-display);font-weight:600;margin:0;text-wrap:balance;line-height:1.25}
+.muted{color:var(--muted)} .small{font-size:13px} .tiny{font-size:12px}
+.num{font-variant-numeric:tabular-nums}
+.row{display:flex;align-items:center;gap:10px} .col{display:flex;flex-direction:column;gap:10px}
+.grow{flex:1;min-width:0} .wrap{flex-wrap:wrap}
+.ell{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* base icon size: zero specificity so component rules (.iconbtn svg, .tabs svg…) still win */
+:where(svg.i){width:1.2em;height:1.2em;flex:none;display:block}
+
+/* top bar */
+.top{position:sticky;top:0;z-index:5;background:var(--surface);border-bottom:1px solid var(--line);padding-block:10px}
+.logo{font-family:var(--font-display);font-size:24px;letter-spacing:-.01em;color:var(--fg)}
+.logo b{color:var(--accent);font-weight:600}
+.iconbtn{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;color:var(--fg);flex:none}
+.iconbtn:hover{background:var(--surface-2)}
+.iconbtn svg{width:22px;height:22px}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;background:var(--surface-2);font-size:13px;font-weight:600;white-space:nowrap}
+.pill.energy{background:var(--gold-soft);color:var(--gold)}
+.pill.gem{background:var(--violet-soft);color:var(--violet)}
+.pill.hot{background:var(--accent-soft);color:var(--accent)}
+.pill svg{width:15px;height:15px}
+
+/* bottom tabs */
+.tabs{display:flex;border-top:1px solid var(--line);background:var(--surface);padding-bottom:env(safe-area-inset-bottom,0px)}
+.tabs button{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 0 7px;font-size:11px;color:var(--muted);position:relative}
+.tabs button svg{width:24px;height:24px}
+.tabs button[aria-current="page"]{color:var(--fg)}
+.tabs button[aria-current="page"] svg{stroke-width:2.4}
+.dot{position:absolute;top:5px;left:calc(50% + 6px);min-width:17px;height:17px;padding:0 4px;border-radius:9px;background:var(--accent);color:var(--accent-ink);font-size:10.5px;font-weight:700;display:grid;place-items:center}
+
+/* avatar */
+.av{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;font-size:22px;flex:none;position:relative;user-select:none}
+.av.sm{width:34px;height:34px;font-size:17px} .av.xs{width:26px;height:26px;font-size:13px}
+.av.lg{width:80px;height:80px;font-size:40px} .av.md{width:56px;height:56px;font-size:28px}
+.av.news{border-radius:12px}
+
+/* buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:42px;padding:0 18px;border-radius:999px;font-weight:600;background:var(--fg);color:var(--bg);transition:transform .08s;white-space:nowrap}
+.btn svg{width:18px;height:18px}
+.btn.sm{gap:6px}
+.btn.sm svg{width:16px;height:16px}
+.btn.ghost:hover,.btn.soft:hover{background:var(--surface-2)}
+.btn:active{transform:scale(.97)}
+.btn.accent{background:var(--accent);color:var(--accent-ink)}
+.btn.ghost{background:transparent;color:var(--fg);border:1px solid var(--line)}
+.btn.soft{background:var(--surface-2);color:var(--fg)}
+.btn.sm{height:34px;padding:0 14px;font-size:14px}
+.btn.block{width:100%}
+.btn[disabled]{opacity:.45;pointer-events:none}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:999px;border:1px solid var(--line);font-size:14px;background:var(--surface)}
+.chip[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+
+/* form */
+.field{display:flex;flex-direction:column;gap:6px}
+.field label{font-size:13px;font-weight:600;color:var(--muted)}
+.in{width:100%;border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:11px 13px;outline:none;resize:vertical}
+.in:focus{border-color:var(--accent)}
+textarea.in{min-height:84px;line-height:1.5}
+input[type=range]{width:100%;accent-color:var(--accent)}
+
+/* stories */
+.stories{display:flex;gap:14px;overflow-x:auto;padding-block:12px;border-bottom:1px solid var(--line);scrollbar-width:none}
+.stories::-webkit-scrollbar{display:none}
+.story{display:flex;flex-direction:column;align-items:center;gap:5px;width:64px;flex:none;font-size:11.5px;color:var(--muted)}
+.story .ring{padding:2.5px;border-radius:50%;background:conic-gradient(var(--accent),var(--gold),var(--violet),var(--accent))}
+.story .ring.seen{background:var(--line)}
+.story .ring .av{border:2.5px solid var(--surface)}
+.story .ell{max-width:64px}
+.story .plus{position:absolute;right:-2px;bottom:-2px;width:20px;height:20px;border-radius:50%;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;font-size:15px;font-weight:700;border:2px solid var(--surface)}
+
+/* composer */
+.composer{display:flex;gap:12px;padding-block:14px;border-bottom:1px solid var(--line)}
+.composer textarea{border:0;outline:none;resize:none;width:100%;min-height:52px;background:transparent;font-size:17px;padding:8px 0 0}
+.composer .bar{display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap}
+.boost{display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:999px;border:1px dashed var(--line);font-size:12.5px;color:var(--muted)}
+.boost[aria-pressed="true"]{border-style:solid;border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+
+/* posts */
+.post{display:flex;gap:12px;padding-block:13px;border-bottom:1px solid var(--line);cursor:pointer}
+.post:hover{background:color-mix(in srgb,var(--surface-2) 45%,transparent)}
+.post .who{display:flex;align-items:baseline;gap:5px;min-width:0}
+.post .name{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:55%}
+.post .handle{color:var(--muted);font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.post .text{white-space:pre-wrap;word-break:break-word;margin-top:2px}
+.post .acts{display:flex;justify-content:space-between;max-width:330px;margin-top:9px;color:var(--muted);font-size:13px}
+.post .acts button{display:inline-flex;align-items:center;gap:5px;padding:3px 4px;border-radius:8px}
+.post .acts svg{width:18px;height:18px}
+.post .acts .on-like{color:var(--accent)} .post .acts .on-rt{color:var(--good)}
+.badge{display:inline-grid;place-items:center;width:16px;height:16px;border-radius:50%;background:var(--blue);color:#fff;flex:none;align-self:center}
+.badge svg{width:11px;height:11px}
+.tag{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:700;padding:2px 8px;border-radius:999px;margin-top:6px}
+.tag.viral{background:var(--accent-soft);color:var(--accent)}
+.tag.cancel{background:color-mix(in srgb,var(--bad) 16%,transparent);color:var(--bad)}
+.tag.news{background:var(--surface-2);color:var(--muted)}
+.tag.drama{background:var(--violet-soft);color:var(--violet)}
+.thread-main{padding-block:14px;border-bottom:1px solid var(--line)}
+.thread-main .text{font-size:18px;white-space:pre-wrap;word-break:break-word;margin-top:10px}
+.actbar{display:flex;justify-content:space-around;padding-block:8px;border-bottom:1px solid var(--line);color:var(--muted);font-size:14px}
+.actbar button{display:inline-flex;gap:6px;align-items:center;padding:4px 8px;border-radius:8px}
+.actbar svg{width:19px;height:19px}
+.actbar .on-like{color:var(--accent)} .actbar .on-rt{color:var(--good)}
+.stats{display:flex;gap:16px;font-size:14px;color:var(--muted);padding-block:10px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.stats b{color:var(--fg)}
+
+/* sticky reply box */
+.replybox{display:flex;gap:10px;align-items:flex-end;padding-block:10px;border-top:1px solid var(--line);background:var(--surface)}
+.replybox textarea{flex:1;border:1px solid var(--line);border-radius:20px;padding:9px 14px;min-height:40px;max-height:120px;resize:none;outline:none;background:var(--surface-2)}
+.send{width:40px;height:40px;border-radius:50%;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;flex:none}
+.send svg{width:20px;height:20px}
+.send[disabled]{opacity:.4}
+
+/* DM */
+.dmlist .item{display:flex;gap:12px;align-items:center;padding-block:12px;border-bottom:1px solid var(--line);cursor:pointer}
+.unread{width:9px;height:9px;border-radius:50%;background:var(--blue);flex:none}
+.chat{display:flex;flex-direction:column;gap:4px;padding-block:14px}
+.bub{max-width:76%;padding:8px 13px;border-radius:19px;white-space:pre-wrap;word-break:break-word;line-height:1.45}
+.bub.me{align-self:flex-end;background:var(--blue);color:#fff;border-bottom-right-radius:6px}
+.bub.them{align-self:flex-start;background:var(--surface-2);border-bottom-left-radius:6px}
+.bub.sys{align-self:center;background:none;color:var(--muted);font-size:12.5px;text-align:center;max-width:90%}
+.daysep{align-self:center;font-size:12px;color:var(--muted);margin:10px 0 4px;font-weight:600}
+.receipt{align-self:flex-end;font-size:11.5px;color:var(--muted);margin-top:-1px}
+.typing{align-self:flex-start;background:var(--surface-2);border-radius:19px;padding:12px 15px;display:flex;gap:4px}
+.typing i{width:7px;height:7px;border-radius:50%;background:var(--muted);animation:bl 1.2s infinite}
+.typing i:nth-child(2){animation-delay:.2s}.typing i:nth-child(3){animation-delay:.4s}
+@keyframes bl{0%,60%,100%{opacity:.25;transform:translateY(0)}30%{opacity:1;transform:translateY(-3px)}}
+
+/* gauges */
+.gauge{display:flex;flex-direction:column;gap:5px}
+.gauge .lbl{display:flex;justify-content:space-between;font-size:13px}
+.gauge .trk{height:8px;border-radius:5px;background:var(--surface-2);overflow:hidden;position:relative}
+.gauge .fill{height:100%;border-radius:5px;transition:width .6s cubic-bezier(.2,.8,.2,1)}
+.relbar{height:6px;border-radius:4px;background:var(--surface-2);position:relative;overflow:hidden}
+.relbar .mid{position:absolute;left:50%;top:0;bottom:0;width:1px;background:var(--line)}
+.relbar .fill{position:absolute;top:0;bottom:0;border-radius:4px}
+
+/* sections & cards */
+.sec{padding-block:16px;border-bottom:1px solid var(--line)}
+.sec h3{font-size:17px;margin-bottom:10px}
+.card{border:1px solid var(--line);border-radius:var(--r);padding:14px;background:var(--surface)}
+.card.event{border-color:color-mix(in srgb,var(--accent) 40%,var(--line))}
+.kicker{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--accent)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.statbox{background:var(--surface-2);border-radius:12px;padding:10px 12px}
+.statbox .v{font-family:var(--font-display);font-size:20px}
+.list-plain{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+
+/* home worlds */
+.world{display:flex;gap:14px;align-items:center;padding:14px;border:1px solid var(--line);border-radius:var(--r);cursor:pointer;background:var(--surface)}
+.world:hover{border-color:var(--accent)}
+.world .em{width:54px;height:54px;border-radius:14px;display:grid;place-items:center;font-size:28px;flex:none}
+.preset{display:flex;flex-direction:column;gap:6px;padding:13px;border:1px solid var(--line);border-radius:var(--r);text-align:left;background:var(--surface)}
+.preset[aria-pressed="true"]{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
+.preset .em{font-size:26px}
+.hero-home{padding-block:22px 6px}
+.hero-home h1{font-size:30px;letter-spacing:-.01em}
+.hero-home h1 em{font-style:normal;color:var(--accent)}
+
+/* sheet (modal) */
+.scrim{position:fixed;inset:0;background:rgba(15,5,10,.45);z-index:40;display:flex;align-items:flex-end;justify-content:center;animation:fade .18s}
+.sheet{width:100%;max-width:var(--col);max-height:92%;background:var(--surface);border-radius:20px 20px 0 0;display:flex;flex-direction:column;box-shadow:var(--shadow);animation:up .24s cubic-bezier(.2,.8,.2,1);padding-bottom:env(safe-area-inset-bottom,0px)}
+.sheet.full{height:100%;max-height:100%;border-radius:0}
+.sheet .sh-head{display:flex;align-items:center;gap:8px;padding-block:10px;border-bottom:1px solid var(--line)}
+.sheet .sh-head h2{font-size:18px;flex:1}
+.sheet .sh-body{flex:1;overflow-y:auto;padding-block:14px}
+@keyframes up{from{transform:translateY(40px);opacity:0}to{transform:none;opacity:1}}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+
+/* toast / outcome */
+#toast{position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:60;background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:12px;font-size:14px;max-width:min(440px,calc(100% - 32px));box-shadow:var(--shadow);text-align:center}
+#outcome{position:fixed;left:50%;top:calc(64px + env(safe-area-inset-top,0px));transform:translateX(-50%);z-index:55;width:min(440px,calc(100% - 32px));border-radius:18px;padding:14px 16px;box-shadow:var(--shadow);background:var(--surface);border:1px solid var(--line);animation:drop .35s cubic-bezier(.2,.9,.3,1.3)}
+#outcome .big{font-family:var(--font-display);font-size:22px}
+#outcome.viral{border-color:var(--accent)} #outcome.viral .big{color:var(--accent)}
+#outcome.cancelled{border-color:var(--bad)} #outcome.cancelled .big{color:var(--bad)}
+#outcome.drama .big{color:var(--violet)}
+.deltas{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.delta{font-size:12.5px;font-weight:700;padding:3px 9px;border-radius:999px;background:var(--surface-2)}
+.delta.up{color:var(--good)} .delta.down{color:var(--bad)}
+@keyframes drop{from{transform:translate(-50%,-24px);opacity:0}to{transform:translate(-50%,0);opacity:1}}
+
+/* thinking */
+.thinking{display:flex;align-items:center;gap:10px;padding-block:12px;color:var(--muted);font-size:14px}
+.spin{width:18px;height:18px;border-radius:50%;border:2.5px solid var(--line);border-top-color:var(--accent);animation:sp .8s linear infinite;flex:none}
+@keyframes sp{to{transform:rotate(360deg)}}
+.notice{margin-block:10px;padding:10px 13px;border-radius:12px;background:var(--gold-soft);color:var(--fg);font-size:13.5px}
+
+/* story viewer */
+.sv{position:fixed;inset:0;z-index:70;background:#0c0709;display:flex;justify-content:center}
+.sv .frame{width:100%;max-width:var(--col);height:100%;display:flex;flex-direction:column;color:#fff;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+.sv .bars{display:flex;gap:4px;padding:10px 12px 6px}
+.sv .bars i{flex:1;height:3px;border-radius:2px;background:rgba(255,255,255,.3);overflow:hidden}
+.sv .bars i b{display:block;height:100%;background:#fff;width:0}
+.sv .card-s{flex:1;margin:6px 10px;border-radius:18px;display:grid;place-items:center;padding:28px;text-align:center;font-family:var(--font-display);font-size:26px;line-height:1.35;position:relative;word-break:break-word}
+.sv .nav{position:absolute;top:0;bottom:0;width:35%}
+.sv .nav.l{left:0}.sv .nav.r{right:0}
+
+/* activity scene */
+.scene{display:flex;flex-direction:column;gap:12px}
+.narr{font-style:italic;color:var(--muted);white-space:pre-wrap}
+.line{white-space:pre-wrap}
+.line b{font-weight:700}
+.opt{display:block;width:100%;text-align:left;padding:11px 14px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.opt:hover{border-color:var(--accent)}
+
+/* achievements */
+.ach{display:flex;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
+.ach .ic{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;font-size:20px;background:var(--surface-2);flex:none}
+.ach.locked{opacity:.45}
+
+.empty{padding:40px 24px;text-align:center;color:var(--muted)}
+.empty .em{font-size:40px;margin-bottom:6px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+
+/* avatars as images over an emoji fallback */
+.av{overflow:hidden}
+.av img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:inherit}
+/* post & story photos */
+.pimg{margin-top:10px;border-radius:16px;overflow:hidden;border:1px solid var(--line);background:var(--surface-2);aspect-ratio:1/1;max-width:100%;width:100%;max-width:400px;position:relative}
+.pimg img{width:100%;height:100%;object-fit:cover;display:block}
+.pimg.ph{display:grid;place-items:center;padding:18px;text-align:center;color:var(--muted);font-size:13px;font-style:italic;background:linear-gradient(110deg,var(--surface-2) 30%,color-mix(in srgb,var(--surface-2) 60%,var(--surface)) 50%,var(--surface-2) 70%);background-size:220% 100%;animation:shim 1.6s linear infinite}
+.pimg.ph b{display:block;font-style:normal;font-size:22px;margin-bottom:6px}
+@keyframes shim{to{background-position:-220% 0}}
+.thread-main .pimg{max-width:100%}
+.sv .card-s .sv-photo{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:inherit}
+.sv .card-s>span{position:relative;z-index:1}
+.sv .card-s .nav{z-index:2}
+.sv .card-s.photo{place-items:end center;padding:0;overflow:hidden}
+.sv .card-s.photo>span{display:block;width:100%;padding:60px 22px 24px;background:linear-gradient(transparent,rgba(0,0,0,.65));font-size:20px}
+.av:has(img)>span{visibility:hidden}
+.meter{height:10px;border-radius:6px;background:var(--surface-2);overflow:hidden}
+.meter i{display:block;height:100%;background:var(--gold);border-radius:6px}
+code.k{font-size:12.5px;background:var(--surface-2);padding:2px 6px;border-radius:6px;word-break:break-all}
+a{color:var(--blue)}
+@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+@media (min-width:520px){#app{box-shadow:0 0 0 1px var(--line)}}
+
+/* phone / installed-app feel */
+@supports (height:100dvh){html{height:100dvh}}
+body{-webkit-tap-highlight-color:transparent;overscroll-behavior:none}
+button,.tabs,.story,.chip{-webkit-user-select:none;user-select:none}
+@media (max-width:519px){#app{border:0}}
+.logo{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+@media (max-width:420px){.logo{font-size:21px}.hide-narrow{display:none}.top .row{gap:6px}}
+@media (pointer:coarse){.in,.replybox textarea,select{font-size:16px}} /* 16px stops iOS zooming into inputs */
+/* account & cloud save */
+.iconbtn{position:relative}
+.cdot{position:absolute;right:6px;bottom:6px;width:9px;height:9px;border-radius:50%;border:2px solid var(--surface);background:var(--muted)}
+.cdot.ok{background:var(--good)} .cdot.syncing{background:var(--gold)} .cdot.offline{background:var(--muted)} .cdot.error{background:var(--bad)} .cdot.out{background:var(--accent)}
+.linkbtn{color:var(--blue);font-size:13px;font-weight:600;align-self:flex-start}
+.err{color:var(--bad);font-size:13px}
+.okmsg{color:var(--good);font-size:13px}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="layer"></div>
+<div id="toast" hidden></div>
+<script>
+"use strict";
+/* ================= utilities ================= */
+const $ = (s, r = document) => r.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const uid = (p = "") => p + Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-3);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const rnd = (a, b) => Math.floor(a + Math.random() * (b - a + 1));
+const num = v => { v = Number(v); return Number.isFinite(v) ? v : 0; };
+const pick = a => a[Math.floor(Math.random() * a.length)];
+const todayKey = () => { const d = new Date(); return d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate(); };
+function fmt(n) {
+  n = Math.round(num(n));
+  const a = Math.abs(n);
+  if (a >= 1e6) return (n / 1e6).toFixed(a >= 1e7 ? 0 : 1).replace(/\.0$/, "") + "M";
+  if (a >= 1e4) return (n / 1e3).toFixed(0) + "K";
+  if (a >= 1e3) return (n / 1e3).toFixed(1).replace(/\.0$/, "") + "K";
+  return String(n);
+}
+const sign = n => (n > 0 ? "+" : "") + fmt(n);
+const COLORS = ["#F7C6D9", "#C9D8FF", "#FFE0A8", "#C8F0DA", "#E3D4FF", "#FFD0C2", "#BFEFF2", "#F2E6C9", "#D9F2B8", "#FFC9EC"];
+const DCOLORS = ["#5B2238", "#24345E", "#5A4314", "#1E4A35", "#3B2D66", "#5C2F22", "#1C4A4D", "#4A4027", "#3A4A1E", "#5A2350"];
+const isDark = () => document.documentElement.dataset.theme === "dark" || (document.documentElement.dataset.theme !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+function hashN(s) { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) | 0; return Math.abs(h); }
+function avStyle(a, key) { const i = a && Number.isInteger(a.c) ? a.c : hashN(key) % COLORS.length; return `background:${(isDark() ? DCOLORS : COLORS)[i % COLORS.length]}`; }
+
+/* ---------- avatars: DiceBear illustrations (free, no key) over an emoji fallback ---------- */
+const AV_STYLES = ["notionists", "lorelei", "adventurer", "micah", "personas", "open-peeps", "big-smile"];
+function avURL(a, key) {
+  const st = (a && a.st) || AV_STYLES[hashN(key) % 5];
+  const seed = (a && a.sd) || key;
+  return `https://api.dicebear.com/9.x/${st}/svg?seed=${encodeURIComponent(seed)}`;
+}
+function avatar(a, key, size = "", extra = "") {
+  const img = S.G && S.G.avatars === false ? "" : `<img src="${esc(avURL(a, key))}" alt="" loading="lazy" onerror="this.remove()">`;
+  return `<div class="av ${size} ${extra}" style="${avStyle(a, key)}" aria-hidden="true"><span>${esc((a && a.e) || "🙂")}</span>${img}</div>`;
+}
+
+/* ================= icons ================= */
+const P = {
+  home: '<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/>',
+  compass: '<circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5-5 2 2-5z"/>',
+  mail: '<path d="M21 12a8.5 8.5 0 0 1-12.6 7.4L3 21l1.6-5.4A8.5 8.5 0 1 1 21 12z"/>',
+  bell: '<path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/>',
+  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/>',
+  back: '<path d="m15 18-6-6 6-6"/>',
+  heart: '<path d="M12 20s-7.5-4.6-9.3-9.2C1.4 7.4 3.6 4 7.1 4c2 0 3.6 1.1 4.9 2.9C13.3 5.1 14.9 4 16.9 4c3.5 0 5.7 3.4 4.4 6.8C19.5 15.4 12 20 12 20z"/>',
+  rt: '<path d="m17 2 4 4-4 4"/><path d="M3 11V9a3 3 0 0 1 3-3h15"/><path d="m7 22-4-4 4-4"/><path d="M21 13v2a3 3 0 0 1-3 3H3"/>',
+  reply: '<path d="M21 11.5a8.4 8.4 0 0 1-12.4 7.4L3 21l1.9-5.1A8.4 8.4 0 1 1 21 11.5z"/>',
+  views: '<path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/>',
+  zap: '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
+  gem: '<path d="M6 3h12l4 6-10 12L2 9z"/><path d="M2 9h20M12 21 8 9l4-6 4 6z"/>',
+  rewind: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>',
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  send: '<path d="M5 12h14M13 6l6 6-6 6"/>',
+  check: '<path d="m5 12.5 4.5 4.5L19 7.5" stroke-width="3.2"/>',
+  x: '<path d="M18 6 6 18M6 6l12 12"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/>',
+  edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
+  store: '<path d="M3 9 4.5 4h15L21 9"/><path d="M3 9h18v2a3 3 0 0 1-6 0 3 3 0 0 1-6 0 3 3 0 0 1-6 0z"/><path d="M5 13v8h14v-8"/>',
+  lock: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  trash: '<path d="M3 6h18M8 6V4h8v2M6 6l1 15h10l1-15"/>',
+  camera: '<path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/>',
+  key: '<circle cx="8" cy="15" r="4"/><path d="m10.8 12.2 8.7-8.7M17 6l2.5 2.5M14.5 8.5 16 10"/>'
+};
+const ic = (n, sw = 2) => `<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[n] || ""}</svg>`;
+const badge = () => `<span class="badge" title="Verified">${ic("check")}</span>`;
+
+/* ================= state ================= */
+const S = {
+  G: null,          // global save: key, model, gems, settings, worlds index, library
+  W: null,          // world being played
+  key: null,        // OpenRouter key info from /api/v1/key
+  models: null,     // free models list
+  view: { screen: "home", tab: "feed", post: null, dm: null },
+  busy: null, snaps: [], typing: {}
+};
+const MADNESS = ["", "Chill and wholesome", "A little drama", "Normal social media", "Messy, rumors everywhere", "Total chaos, anything goes"];
+const CHEMS = ["Best friends", "Secret crush", "Shipped by fans", "Rivals", "Enemies", "Siblings", "Mentor", "Dating", "Exes", "Situationship", "Superfan", "Hater", "Strangers"];
+const IMG_STYLES = { photo: "candid smartphone photo, natural light, realistic, social media post", anime: "anime illustration, vibrant, detailed, key visual style", art: "digital painting, cinematic lighting, detailed illustration" };
+
+function newGlobal() {
+  return { v: 2, savedAt: 0, apiKey: "", model: "", gems: 30, theme: "", imgMode: "ai", avatars: true,
+    streak: { n: 0, last: "" }, ach: {}, library: [], worlds: [], req: { day: "", n: 0 },
+    stats: { posts: 0, virals: 0, cancels: 0, events: 0, acts: 0 } };
+}
+
+/* ================= persistence (this browser's localStorage) ================= */
+const LS = {
+  get(k) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : null; } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; } },
+  del(k) { try { localStorage.removeItem(k); } catch { } }
+};
+let warnedFull = false;
+function saveMeta() { S.G.savedAt = Date.now(); if (!LS.set("mc_meta", S.G) && !warnedFull) { warnedFull = true; toast("Browser storage is full. Delete a world or export your save."); } cloudDirty("meta"); }
+function pruneWorld(W) {
+  W.posts = W.posts.slice(0, 160);
+  for (const p of W.posts) if (p.replies && p.replies.length > 24) p.replies = p.replies.slice(-24);
+  for (const k in W.dms) if (W.dms[k].length > 100) W.dms[k] = W.dms[k].slice(-100);
+  W.notifs = W.notifs.slice(0, 80);
+  W.log = W.log.slice(-45);
+  W.stories = W.stories.filter(s => s.day >= W.day - 1).slice(-30);
+}
+let tWorld = 0;
+function saveWorld() {
+  const W = S.W; if (!W) return;
+  pruneWorld(W); W.savedAt = Date.now();
+  const idx = S.G.worlds.find(x => x.id === W.id);
+  if (idx) Object.assign(idx, { day: W.day, followers: W.me.followers, name: W.name, emoji: W.emoji, last: Date.now(), me: W.me.name });
+  saveMeta(); cloudDirty("world", W.id);
+  clearTimeout(tWorld);
+  tWorld = setTimeout(() => { if (!LS.set("mc_w_" + W.id, W) && !warnedFull) { warnedFull = true; toast("Browser storage is full. Delete a world or export your save."); } }, 300);
+}
+function flushWorld() { if (S.W) { clearTimeout(tWorld); LS.set("mc_w_" + S.W.id, S.W); } }
+addEventListener("pagehide", () => { flushWorld(); cloudPush(); });
+async function loadWorld(id) { return LS.get("mc_w_" + id); }
+
+/* ================= cloud save (Supabase, optional) =================
+   localStorage stays the working copy, so the game keeps running offline. When signed in, every
+   save is queued (the queue itself survives reloads) and uploaded a moment later. On sign-in and
+   whenever the app comes back to the foreground the cloud copy is merged in: per world the newest
+   savedAt wins, deleted worlds stay deleted (tombstones), and the global save keeps the newest
+   copy while merging achievements, stats and the list of worlds from both sides. */
+const CFG = window.MC_CONFIG || {};
+const CLOUD = {
+  sb: null, user: null, state: "off", err: "", last: 0, pulled: 0, pushing: false, pulling: false, applying: false, t: 0,
+  q: Object.assign({ meta: false, worlds: [], deleted: [] }, LS.get("mc_cloud_q") || {})
+};
+const qEmpty = () => !CLOUD.q.meta && !CLOUD.q.worlds.length && !CLOUD.q.deleted.length;
+function saveQ() { LS.set("mc_cloud_q", CLOUD.q); }
+function cloudDirty(kind, id) {
+  if (CLOUD.applying || CLOUD.state === "off") return;
+  const q = CLOUD.q;
+  if (kind === "meta") q.meta = true;
+  else if (kind === "world") { if (!q.worlds.includes(id)) q.worlds.push(id); q.deleted = q.deleted.filter(x => x !== id); }
+  else if (kind === "del") { q.worlds = q.worlds.filter(x => x !== id); if (!q.deleted.includes(id)) q.deleted.push(id); }
+  saveQ(); schedulePush();
+}
+function schedulePush(ms = 1500) { if (!CLOUD.user) return; clearTimeout(CLOUD.t); CLOUD.t = setTimeout(cloudPush, ms); }
+function setCloud(state, err) {
+  CLOUD.state = state; CLOUD.err = err || "";
+  document.querySelectorAll(".cdot").forEach(el => el.className = "cdot " + state);
+  if (S.sheet && S.sheet.fn === sheetAccount) refreshSheet();
+}
+/* what goes to the cloud: never the API key; request counts and the account owner are per device */
+function cloudMeta(G = S.G) { const m = JSON.parse(JSON.stringify(G)); delete m.apiKey; delete m.owner; delete m.req; return m; }
+function mergeMeta(local, remote, remoteWins) {
+  const base = remoteWins ? remote : local, other = remoteWins ? local : remote;
+  const G = Object.assign(newGlobal(), base, { apiKey: local.apiKey, owner: local.owner, req: local.req || { day: "", n: 0 } });
+  G.stats = Object.assign(newGlobal().stats, base.stats);
+  for (const k in (other.stats || {})) G.stats[k] = Math.max(num(G.stats[k]), num(other.stats[k]));
+  G.ach = Object.assign({}, other.ach || {}, base.ach || {});
+  G.worlds = [...(base.worlds || [])];
+  for (const w of (other.worlds || [])) if (w && !G.worlds.some(x => x.id === w.id)) G.worlds.push(w);
+  return G;
+}
+function worldIndex(w, last) { return { id: w.id, name: w.name, emoji: w.emoji, day: w.day, followers: w.me && w.me.followers, me: w.me && w.me.name, last: last || Date.now(), sample: w.sample || undefined }; }
+
+async function cloudPush() {
+  const sb = CLOUD.sb, u = CLOUD.user, q = CLOUD.q;
+  if (!sb || !u || !CLOUD.pulled || CLOUD.pushing || CLOUD.pulling || qEmpty()) return;
+  if (!navigator.onLine) return setCloud("offline");
+  CLOUD.pushing = true; setCloud("syncing");
+  const now = () => new Date().toISOString();
+  try {
+    if (q.meta) {
+      q.meta = false;
+      const { error } = await sb.from("mc_meta").upsert({ user_id: u.id, data: cloudMeta(), saved_at: num(S.G.savedAt), updated_at: now() });
+      if (error) { q.meta = true; throw error; }
+    }
+    for (const id of [...q.worlds]) {
+      q.worlds = q.worlds.filter(x => x !== id);   // a save made during the upload re-queues it
+      const w = S.W && S.W.id === id ? S.W : LS.get("mc_w_" + id);
+      if (!w) continue;
+      const { error } = await sb.from("mc_worlds").upsert({ user_id: u.id, world_id: id, data: w, saved_at: num(w.savedAt), deleted: false, updated_at: now() });
+      if (error) { if (!q.worlds.includes(id)) q.worlds.push(id); throw error; }
+    }
+    for (const id of [...q.deleted]) {
+      const { error } = await sb.from("mc_worlds").upsert({ user_id: u.id, world_id: id, data: null, saved_at: Date.now(), deleted: true, updated_at: now() });
+      if (error) throw error;
+      q.deleted = q.deleted.filter(x => x !== id);
+    }
+    CLOUD.last = Date.now(); setCloud("ok");
+  } catch (e) {
+    setCloud(navigator.onLine ? "error" : "offline", e && e.message);
+    clearTimeout(CLOUD.t); CLOUD.t = setTimeout(cloudPush, 20000);
+  } finally {
+    CLOUD.pushing = false; saveQ();
+    if (CLOUD.state === "ok" && !qEmpty()) schedulePush(300);
+  }
+}
+
+async function cloudPull() {
+  const sb = CLOUD.sb, u = CLOUD.user;
+  if (!sb || !u || CLOUD.pulling || CLOUD.pushing) return;
+  if (!navigator.onLine) { setCloud("offline"); return; }
+  CLOUD.pulling = true; setCloud("syncing");
+  try {
+    const [m, rows] = await Promise.all([
+      sb.from("mc_meta").select("data,saved_at").eq("user_id", u.id).maybeSingle(),
+      sb.from("mc_worlds").select("world_id,saved_at,deleted").eq("user_id", u.id)
+    ]);
+    if (m.error) throw m.error;
+    if (rows.error) throw rows.error;
+    const q = CLOUD.q, local = S.G, fresh = local.owner !== u.id, rm = m.data;
+    // which worlds to download, which to upload, which are gone
+    const dead = new Set(q.deleted), need = [], push = [];
+    const localOf = id => S.W && S.W.id === id ? S.W : LS.get("mc_w_" + id);
+    for (const r of rows.data || []) {
+      const id = r.world_id; if (dead.has(id)) continue;
+      const lw = localOf(id), ls = lw ? num(lw.savedAt) : -1, rs = num(r.saved_at);
+      if (r.deleted) {
+        if (lw && (ls > rs || q.worlds.includes(id))) push.push(id);           // edited here after it was deleted elsewhere: keep it
+        else if (!(S.W && S.W.id === id && isBusy())) dead.add(id);
+      } else if (rs > ls && !q.worlds.includes(id)) need.push(id);
+      else if (ls > rs) push.push(id);
+    }
+    let got = [];
+    if (need.length) {
+      const res = await sb.from("mc_worlds").select("world_id,data,saved_at").eq("user_id", u.id).in("world_id", need);
+      if (res.error) throw res.error;
+      got = res.data || [];
+    }
+    CLOUD.applying = true;
+    // global save
+    const remoteWins = !!(rm && rm.data) && (fresh || (num(rm.saved_at) > num(local.savedAt) && !q.meta));
+    const G = rm && rm.data ? mergeMeta(local, Object.assign({}, rm.data, { savedAt: num(rm.saved_at) }), remoteWins) : local;
+    if (fresh && rm && rm.data) for (const l of local.library) if (!G.library.some(x => x.id === l.id)) G.library.push(l);   // keep characters made before signing in
+    G.owner = u.id;
+    for (const r of got) {
+      if (!r.data) continue;
+      const w = normalizeWorld(r.data); w.savedAt = num(r.saved_at);
+      LS.set("mc_w_" + r.world_id, w);
+      const i = G.worlds.findIndex(x => x.id === r.world_id), entry = worldIndex(w, num(r.saved_at));
+      if (i >= 0) G.worlds[i] = Object.assign(G.worlds[i], entry); else G.worlds.push(entry);
+      if (S.W && S.W.id === r.world_id && !isBusy()) { S.W = w; S.snaps = []; }
+    }
+    for (const id of dead) { LS.del("mc_w_" + id); if (S.W && S.W.id === id) { S.W = null; S.snaps = []; S.view = { screen: "home", tab: "feed" }; } }
+    G.worlds = G.worlds.filter(w => w && !dead.has(w.id));
+    const cloudIds = new Set((rows.data || []).map(r => r.world_id));
+    for (const w of G.worlds) if (!cloudIds.has(w.id) && LS.get("mc_w_" + w.id)) push.push(w.id);    // never uploaded yet
+    S.G = G;
+    const metaChanged = !rm || !rm.data || JSON.stringify(cloudMeta(G)) !== JSON.stringify(cloudMeta(Object.assign({}, rm.data, { savedAt: num(rm.saved_at) })));
+    LS.set("mc_meta", S.G);
+    CLOUD.applying = false;
+    if (metaChanged) saveMeta();
+    for (const id of push) cloudDirty("world", id);
+    CLOUD.pulled = Date.now(); setCloud("ok");
+    applyTheme(); render();
+  } catch (e) {
+    setCloud(navigator.onLine ? "error" : "offline", e && e.message);
+    setTimeout(() => { if (CLOUD.user && !CLOUD.pulled) cloudPull(); }, 30000);
+  } finally {
+    CLOUD.applying = false; CLOUD.pulling = false;
+  }
+  cloudPush();
+}
+
+/* wipe this device's copy (signing out, or another account's leftovers) */
+function wipeLocal() {
+  try { for (let i = localStorage.length - 1; i >= 0; i--) { const k = localStorage.key(i); if (k && (k.startsWith("mc_w_") || k === "mc_meta" || k === "mc_cloud_q")) localStorage.removeItem(k); } } catch { }
+  CLOUD.q = { meta: false, worlds: [], deleted: [] };
+  S.W = null; S.snaps = []; S.view = { screen: "home", tab: "feed" };
+}
+let dailyDone = false;
+function daily() { if (!dailyDone) { dailyDone = true; refreshDaily(); } }
+function cloudInit() {
+  if (!CFG.supabaseUrl || !CFG.supabaseAnonKey || !window.supabase) { CLOUD.state = "off"; daily(); return; }
+  try { CLOUD.sb = window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseAnonKey, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } }); }
+  catch (e) { CLOUD.state = "off"; daily(); return; }
+  CLOUD.state = "out";
+  // supabase-js: don't await its own calls inside this callback
+  CLOUD.sb.auth.onAuthStateChange((ev, session) => setTimeout(() => onAuth(ev, session), 0));
+  addEventListener("online", () => { if (CLOUD.user) cloudPull(); });
+  addEventListener("offline", () => { if (CLOUD.user) setCloud("offline"); });
+  document.addEventListener("visibilitychange", () => {
+    if (!CLOUD.user) return;
+    if (document.visibilityState === "hidden") { flushWorld(); cloudPush(); }
+    else if (Date.now() - CLOUD.pulled > 15000 && !isBusy()) cloudPull();
+  });
+}
+async function onAuth(ev, session) {
+  if (ev === "PASSWORD_RECOVERY") { S.acct = { mode: "newpass" }; openSheet(sheetAccount); }
+  const u = session && session.user;
+  if (!u) { CLOUD.user = null; CLOUD.pulled = 0; setCloud("out"); daily(); render(); return; }
+  if (CLOUD.user && CLOUD.user.id === u.id) return;   // token refresh, tab refocus
+  if (S.G.owner && S.G.owner !== u.id) { const key = S.G.apiKey, theme = S.G.theme; wipeLocal(); S.G = Object.assign(newGlobal(), { apiKey: key, theme }); }
+  CLOUD.user = u;
+  await cloudPull();
+  daily();
+  if (S.sheet && S.sheet.fn === sheetAccount) { S.acct = { mode: "in" }; refreshSheet(); }
+}
+function cloudLabel() {
+  const ago = t => { const s = Math.round((Date.now() - t) / 1000); return s < 60 ? "just now" : s < 3600 ? Math.round(s / 60) + " min ago" : new Date(t).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" }); };
+  return ({ off: "Saved on this device only", out: "Not signed in · saved on this device only", syncing: "Syncing…",
+    ok: "Saved to the cloud" + (CLOUD.last || CLOUD.pulled ? " · " + ago(Math.max(CLOUD.last, CLOUD.pulled)) : ""),
+    offline: "Offline · changes upload when you're back online", error: "Couldn't sync: " + (CLOUD.err || "unknown error") })[CLOUD.state] || "";
+}
+const appURL = () => location.origin + location.pathname;
+
+/* ================= AI via OpenRouter ================= */
+const OR = "https://openrouter.ai/api/v1";
+const SYS = "You are the hidden game engine of a social-media role-play simulator. You write what the simulated people post and say. You always answer with ONE valid JSON object and nothing else: no markdown fences, no commentary, no thinking out loud.";
+function parseJSON(text) {
+  let t = String(text || "").replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+  const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/i); if (fence) t = fence[1];
+  const a = t.indexOf("{"), b = t.lastIndexOf("}");
+  if (a < 0 || b <= a) return null;
+  const body = t.slice(a, b + 1);
+  for (const s of [body, body.replace(/,\s*([}\]])/g, "$1")]) { try { return JSON.parse(s); } catch { } }
+  return null;
+}
+async function orCall(messages, maxTokens) {
+  const G = S.G;
+  let res;
+  try {
+    res = await fetch(OR + "/chat/completions", {
+      method: "POST",
+      headers: { "Authorization": "Bearer " + G.apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: G.model, messages, temperature: 0.9, max_tokens: maxTokens })
+    });
+  } catch { throw { code: "network" }; }
+  const data = await res.json().catch(() => null);
+  countRequest();
+  if (!res.ok || (data && data.error)) throw { code: (data && data.error && data.error.code) || res.status, status: res.status, message: (data && data.error && data.error.message) || res.statusText };
+  const ch = data && data.choices && data.choices[0];
+  if (ch && ch.error) throw { code: ch.error.code || "provider", message: ch.error.message };
+  return (ch && ch.message && ch.message.content) || "";
+}
+async function ai(prompt, size) {
+  const G = S.G;
+  if (!G.apiKey) { openApi("Add your OpenRouter key to start playing."); throw { code: "nokey", quiet: true }; }
+  if (!G.model) { openApi("Pick a model first."); throw { code: "nomodel", quiet: true }; }
+  const maxT = size === "big" ? 5000 : 2200;
+  const msgs = [{ role: "system", content: SYS }, { role: "user", content: prompt }];
+  try {
+    const text = await orCall(msgs, maxT);
+    let obj = parseJSON(text);
+    if (!obj) {
+      const again = await orCall([...msgs, { role: "assistant", content: String(text).slice(0, 4000) || "(empty)" }, { role: "user", content: "That was not a valid JSON object. Reply again with ONLY the JSON object, complete and valid." }], maxT);
+      obj = parseJSON(again);
+    }
+    if (!obj) throw { code: "badjson" };
+    return obj;
+  } finally { refreshKeySoon(); }
+}
+function aiErr(e) {
+  if (e && e.quiet) return null;
+  const c = e && (e.status || e.code);
+  if (c === "network") return "Can't reach OpenRouter. Check your internet connection.";
+  if (c === 401 || c === 403) return "OpenRouter rejected the API key. Check it in API & usage.";
+  if (c === 402) return "Not enough credits for this model. Pick a free (:free) model in API & usage.";
+  if (c === 429) return "Rate limit hit. Free models allow 20 requests a minute and a daily cap. Wait a bit or switch model.";
+  if (c === 404) return "This model isn't available right now. Pick another one in API & usage.";
+  if (c === 408 || c === 502 || c === 503 || c === 504 || c === "provider") return "The model's provider is busy. Try again or pick another free model.";
+  if (c === "badjson") return "The model replied in the wrong format twice. Try again, or pick a stronger model.";
+  return "AI error: " + ((e && e.message) || "unknown") + ". Try again.";
+}
+function countRequest() { const r = S.G.req; const t = todayKey(); if (r.day !== t) { r.day = t; r.n = 0; } r.n++; saveMeta(); }
+async function refreshKey() {
+  if (!S.G.apiKey) { S.key = null; return; }
+  try {
+    const res = await fetch(OR + "/key", { headers: { "Authorization": "Bearer " + S.G.apiKey } });
+    const d = await res.json().catch(() => null);
+    S.key = res.ok && d && d.data ? d.data : { error: (d && d.error && d.error.message) || ("HTTP " + res.status) };
+  } catch { S.key = { error: "Can't reach OpenRouter" }; }
+  renderMeter();
+}
+let tKey = 0;
+function refreshKeySoon() { clearTimeout(tKey); tKey = setTimeout(refreshKey, 1200); }
+async function loadModels() {
+  try {
+    const res = await fetch(OR + "/models");
+    const d = await res.json();
+    const all = (d.data || []).map(m => ({ id: m.id, name: m.name || m.id, ctx: m.context_length || 0, free: /:free$/.test(m.id) || (m.pricing && Number(m.pricing.prompt) === 0 && Number(m.pricing.completion) === 0) }));
+    S.models = all.filter(m => m.free && !/image|vision-only|embed|tts|whisper|lyria|music|audio/i.test(m.id)).sort((a, b) => a.name.localeCompare(b.name));
+  } catch { S.models = []; }
+  if (!S.models.length) return;
+  // re-pick when there is no model, or an auto-picked one is gone or unsuited to role-play (manual picks are left alone)
+  const auto = S.G.modelAuto !== false;
+  const gone = auto && S.G.model && !S.models.some(m => m.id === S.G.model);
+  if (!S.G.model || gone || (auto && BAD_MODEL.test(S.G.model))) {
+    const prev = S.G.model;
+    S.G.model = pickDefaultModel(); S.G.modelAuto = true; saveMeta();
+    if (prev && prev !== S.G.model) toast("Switched AI model to " + S.G.model);
+  }
+}
+/* models that write poorly for role-play: code, safety, tiny or router models */
+const BAD_MODEL = /cod(e|er)|math|safety|guard|ocr|lightning|nano|openrouter\/free|\b[0-9](\.[0-9])?b\b/i;
+function pickDefaultModel() {
+  const pref = ["deepseek/deepseek-chat", "deepseek/deepseek-v3", "meta-llama/llama-3.3-70b", "google/gemma-4-31b", "nvidia/nemotron-3-super", "google/gemini", "qwen/qwen3", "google/gemma", "z-ai/glm", "moonshotai/kimi", "mistralai/mistral-small", "openai/gpt-oss", "thinkingmachines/inkling:"];
+  for (const p of pref) { const m = S.models.find(x => x.id.startsWith(p) && !BAD_MODEL.test(x.id)); if (m) return m.id; }
+  const ok = S.models.filter(x => !BAD_MODEL.test(x.id)).sort((a, b) => b.ctx - a.ctx);
+  return (ok[0] || S.models[0]).id;
+}
+/* the "energy" bar: what is left on the OpenRouter key */
+function isFreeModel() { return /:free$/.test(S.G.model || "") || !!(S.models && S.models.some(m => m.id === S.G.model)); }
+function meterInfo() {
+  const k = S.key;
+  if (!S.G.apiKey) return { label: "Add key", title: "Add your OpenRouter key" };
+  if (!k) return { label: "…", title: "Checking your key" };
+  if (k.error) return { label: "!", title: k.error };
+  const fr = k.free_model_daily_requests;
+  if (isFreeModel() && fr && fr.limit != null) return { label: String(fr.remaining ?? Math.max(0, fr.limit - fr.used)), title: `${fr.remaining} of ${fr.limit} free requests left today (resets 00:00 UTC)` };
+  if (k.limit_remaining != null) return { label: "$" + Number(k.limit_remaining).toFixed(2), title: "Credits left on this key" };
+  return { label: "$" + Number(k.usage_daily || 0).toFixed(2), title: "Credits used today (no limit set on this key)" };
+}
+function renderMeter() { document.querySelectorAll("[data-meter]").forEach(el => { const m = meterInfo(); el.lastChild.textContent = m.label; el.title = m.title; }); if (S.sheet && S.sheet.fn === sheetApi) refreshSheet(); }
+
+/* ================= prompt context ================= */
+const LANG_RULE = "Write ALL in-world text in natural, casual English, the way people really post and text (lowercase vibes, slang, emoji where it fits). Every character keeps their own distinct voice.";
+const IMG_RULE = `Photos: about 1 in 3 posts by characters or random accounts include a photo. For a photo post set "image" to a vivid description of the picture itself (subject, outfit, setting, lighting, camera angle) in under 30 words. Never put names of real people or copyrighted characters in "image"; describe how they look instead. Posts without a photo use "image": null.`;
+function charLine(c) {
+  return `- ${c.name} (@${c.handle})${c.kind === "news" ? " [news/gossip account]" : ""}: ${String(c.desc || c.bio || "").slice(0, 420)}${c.look ? " | looks: " + c.look : ""} | relationship with player: ${Math.round(num(c.rel))}/100${c.chem ? ", dynamic: " + c.chem : ""}${c.followsMe ? ", follows player" : ""}`;
+}
+function postLine(W, p) { return `@${handleOf(W, p.a)}: ${String(p.t).slice(0, 160)}${p.img ? " [photo: " + String(p.img.d).slice(0, 80) + "]" : ""}`; }
+function ctx(W, opts = {}) {
+  const me = W.me;
+  const chars = W.chars.filter(c => c.unlocked || c.kind === "news");
+  const recent = W.posts.slice(0, opts.posts ?? 8).map(p => postLine(W, p)).join("\n");
+  const mem = W.log.slice(-25).map(l => "- " + l).join("\n");
+  return `WORLD: ${W.name} — ${W.desc}
+FANDOM/SETTING: ${W.fandom || W.name}
+DRAMA LEVEL (1-5): ${W.madness} = ${MADNESS[W.madness]}${W.muteNews ? "\nNews/gossip accounts are MUTED: never generate news posts." : ""}
+IN-WORLD DAY: ${W.day}
+PLAYER: ${me.name} (@${me.handle}). Bio: ${me.bio || "-"}. Vibe: ${me.vibe || "-"}. ${me.look ? "Looks: " + me.look + ". " : ""}Followers ${me.followers}, humor ${Math.round(me.humor)}, aura ${Math.round(me.aura)}, level ${me.level}.
+PLAYER GOAL: ${me.goal || "-"}
+PLAYER SKILLS: ${me.skills.map(s => `${s.name} lv${s.lv}`).join(", ")}
+CHARACTERS IN THE PLAYER'S CIRCLE:
+${chars.map(charLine).join("\n") || "-"}
+STORY MEMORY (oldest first):
+${mem || "- (the story just started)"}
+RECENT FEED:
+${recent || "(empty)"}
+${LANG_RULE}
+Stay in the world's tone. Characters remember the story memory and act consistently. Keep it suitable for ages 13+ (no explicit sexual content, no graphic violence).`;
+}
+function handleOf(W, a) {
+  if (a === "me") return W.me.handle;
+  if (typeof a === "object" && a) return a.h || "user";
+  const c = W.chars.find(x => x.id === a); return c ? c.handle : "user";
+}
+function findCharByHandle(W, h) {
+  h = String(h || "").replace(/^@/, "").toLowerCase();
+  return W.chars.find(c => c.handle.toLowerCase() === h) || W.chars.find(c => c.name.toLowerCase() === h);
+}
+function authorFrom(W, h, name) {
+  const c = findCharByHandle(W, h);
+  if (c) return c.id;
+  const handle = String(h || "user" + rnd(100, 9999)).replace(/^@/, "").replace(/\s+/g, "").slice(0, 24) || "user";
+  return { h: handle, n: String(name || handle).slice(0, 40), e: pick(["🙂", "😎", "🫠", "👀", "🐱", "🌸", "🍜", "🎧", "🧃", "💅", "🤡", "🐸"]), c: hashN(handle) % COLORS.length, st: AV_STYLES[hashN(handle + "x") % AV_STYLES.length] };
+}
+const mkImg = d => d && typeof d === "string" && d.trim() ? { d: d.trim().slice(0, 300), s: rnd(1, 999999) } : null;
+/* ================= photos in posts & stories =================
+   AI mode: Pollinations (free, no key) renders the exact picture the AI described.
+   The free tier is rate-limited per IP, so pictures load one at a time through a queue
+   that slows down when the service pushes back, and falls back to a stock photo after 3 tries.
+   Stock mode: Picsum photos, instant but not matched to the text. */
+const IMGS = LS.get("mc_imgs") || {};          // seed -> 1 (AI ok) | 2 (fell back to stock)
+const IMGQ = { q: [], running: false, gap: 3000, tries: {}, pending: {} };
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+function saveImgs() { const k = Object.keys(IMGS); if (k.length > 600) for (const x of k.slice(0, k.length - 600)) delete IMGS[x]; LS.set("mc_imgs", IMGS); }
+function aiImgURL(img, w, h) {
+  const style = IMG_STYLES[(S.W && S.W.imgStyle) || "photo"] || IMG_STYLES.photo;
+  return `https://image.pollinations.ai/prompt/${encodeURIComponent(img.d + ", " + style)}?width=${w}&height=${h}&seed=${img.s}&nologo=true&model=flux&referrer=main-character-sim`;
+}
+const stockURL = (img, w, h) => `https://picsum.photos/seed/${img.s}/${w}/${h}`;
+function imgSrc(img, w = 768, h = 768) {
+  if (!img || S.G.imgMode === "off") return null;
+  if (S.G.imgMode === "stock" || IMGS[img.s] === 2) return stockURL(img, w, h);
+  if (IMGS[img.s] === 1) return aiImgURL(img, w, h);
+  queueImg(img, w, h);
+  return null;
+}
+function photoHTML(img) {
+  if (!img || S.G.imgMode === "off") return "";
+  const src = imgSrc(img);
+  if (src) return `<div class="pimg"><img src="${esc(src)}" alt="${esc(img.d)}" loading="lazy" data-is="${img.s}" onerror="imgFail(this)"></div>`;
+  return `<div class="pimg ph" data-ik="${img.s}" title="${esc(img.d)}"><span><b>📷</b>${esc(img.d)}</span></div>`;
+}
+function queueImg(img, w, h) {
+  if (IMGQ.pending[img.s]) return;
+  IMGQ.pending[img.s] = true;
+  IMGQ.q.push({ img: { d: img.d, s: img.s }, w, h });
+  pumpImgs();
+}
+async function pumpImgs() {
+  if (IMGQ.running) return; IMGQ.running = true;
+  while (IMGQ.q.length) {
+    const job = IMGQ.q.shift(), url = aiImgURL(job.img, job.w, job.h);
+    const ok = await new Promise(res => {
+      const im = new Image(); const t = setTimeout(() => { im.src = ""; res(false); }, 90000);
+      im.onload = () => { clearTimeout(t); res(im.naturalWidth > 0); };
+      im.onerror = () => { clearTimeout(t); res(false); };
+      im.src = url;
+    });
+    if (ok) { IMGS[job.img.s] = 1; IMGQ.gap = Math.max(2500, IMGQ.gap * 0.8); swapIn(job.img.s, url); delete IMGQ.pending[job.img.s]; }
+    else {
+      const n = (IMGQ.tries[job.img.s] || 0) + 1; IMGQ.tries[job.img.s] = n;
+      IMGQ.gap = Math.min(60000, IMGQ.gap * 2);
+      if (n < 3) IMGQ.q.push(job);
+      else { IMGS[job.img.s] = 2; swapIn(job.img.s, stockURL(job.img, job.w, job.h)); delete IMGQ.pending[job.img.s]; }
+    }
+    saveImgs();
+    if (S.G.imgMode !== "ai") break;
+    await sleep(IMGQ.gap);
+  }
+  IMGQ.running = false;
+}
+function swapIn(seed, url) {
+  document.querySelectorAll(`[data-ik="${seed}"]`).forEach(el => {
+    el.classList.remove("ph");
+    el.innerHTML = `<img src="${esc(url)}" alt="" data-is="${seed}" onerror="imgFail(this)">`;
+  });
+  document.querySelectorAll(`[data-ikbg="${seed}"]`).forEach(el => { el.insertAdjacentHTML("afterbegin", `<img class="sv-photo" src="${esc(url)}" alt="">`); el.classList.add("photo"); });
+}
+window.imgFail = function (el) {
+  const s = el.dataset.is; el.onerror = null;
+  if (IMGS[s] === 1) { IMGS[s] = 2; saveImgs(); }
+  el.src = `https://picsum.photos/seed/${s}/768/768`;
+};
+/* ================= game rules ================= */
+const xpNeed = lv => 60 + lv * 40;
+function notify(k, t, ref) { const W = S.W; if (!W) return; W.notifs.unshift({ id: uid("n"), k, t, ts: Date.now(), read: false, ref: ref || null }); }
+function remember(line) { if (line && S.W) S.W.log.push(`[day ${S.W.day}] ${String(line).slice(0, 220)}`); }
+function isBusy() { return !!S.busy || Object.values(S.typing).some(Boolean) || !!(S.W && S.W.act && S.W.act.busy); }
+/* one AI action at a time: overlapping actions share the snapshot stack and could undo each other */
+function guard() { if (!isBusy()) return false; toast("Wait for the AI to finish first"); return true; }
+
+function refreshDaily() {
+  const G = S.G, t = todayKey();
+  if (G.streak.last !== t) {
+    const y = new Date(Date.now() - 864e5); const yk = y.getFullYear() + "-" + (y.getMonth() + 1) + "-" + y.getDate();
+    G.streak.n = G.streak.last === yk ? G.streak.n + 1 : 1;
+    G.streak.last = t;
+    const gems = 5 + Math.min(G.streak.n, 10);
+    G.gems += gems;
+    setTimeout(() => toast(`Day ${G.streak.n} check-in streak · +${gems} gems`), 600);
+    saveMeta();
+  }
+}
+function addXP(n) {
+  const me = S.W.me; me.xp += n;
+  while (me.xp >= xpNeed(me.level)) {
+    me.xp -= xpNeed(me.level); me.level++; me.sp++; S.G.gems += 10;
+    notify("level", `Level up! You're level ${me.level}. +1 skill point, +10 gems`);
+    setTimeout(() => toast(`Level ${me.level}! Upgrade a skill on your profile`), 900);
+  }
+}
+function totalUps(me) { return me.skills.reduce((s, k) => s + (k.lv - 1), 0); }
+function upgradeSkill(i) {
+  const me = S.W.me; if (me.sp < 1) return toast("No skill points yet. Earn XP by posting, replying, events and activities.");
+  const sk = me.skills[i]; if (!sk || sk.lv >= 10) return;
+  me.sp--; sk.lv++;
+  const ups = totalUps(me);
+  me.milestones.forEach((m, j) => {
+    if (!m.done && ups >= (j + 1) * 2) {
+      m.done = true; me.unlocks++; S.G.gems += 5;
+      notify("milestone", `Milestone cleared: ${m.t} · you can unlock 1 new character`);
+      remember(`${me.name} reached a milestone: "${m.t}"`);
+      setTimeout(() => toast("Milestone cleared! Unlock a new character on your profile"), 400);
+    }
+  });
+  checkAch(); saveWorld(); render();
+}
+function relChange(W, h, d) {
+  const c = findCharByHandle(W, h); if (!c) return null;
+  c.rel = clamp(num(c.rel) + clamp(num(d), -25, 25), -100, 100);
+  return c;
+}
+function applyStats(o, mult = 1) {
+  const me = S.W.me, out = {};
+  const f = Math.round(num(o.followers_change) * mult);
+  if (f) { me.followers = Math.max(0, me.followers + f); out.followers = f; }
+  const h = clamp(Math.round(num(o.humor_change)), -15, 15); if (h) { me.humor = Math.max(0, me.humor + h); out.humor = h; }
+  const a = clamp(Math.round(num(o.aura_change)), -15, 15); if (a) { me.aura = Math.max(0, me.aura + a); out.aura = a; }
+  return out;
+}
+function applyRels(list) {
+  const out = [];
+  for (const r of (Array.isArray(list) ? list : [])) { if (!r) continue; const c = relChange(S.W, r.handle, r.change); if (c && num(r.change)) out.push({ name: c.name, d: Math.round(num(r.change)) }); }
+  return out;
+}
+function addPosts(list, tag) {
+  const W = S.W, made = [];
+  for (const x of (Array.isArray(list) ? list : [])) {
+    if (!x || !x.text) continue;
+    const a = authorFrom(W, x.handle, x.name);
+    const base = typeof a === "string" ? (W.chars.find(c => c.id === a)?.followers || 500) : rnd(50, 3000);
+    const p = { id: uid("p"), a, t: String(x.text), img: mkImg(x.image), day: W.day, ts: Date.now() + made.length, likes: Math.round(base * (0.01 + Math.random() * 0.08)), rts: rnd(0, 40), views: Math.round(base * (0.3 + Math.random() * 1.5)), replies: [], tag: tag || null };
+    W.posts.unshift(p); made.push(p);
+  }
+  return made;
+}
+function pushDM(cid, f, t) { const W = S.W; (W.dms[cid] || (W.dms[cid] = [])).push({ f, t, day: W.day, ts: Date.now() }); }
+function proactiveDM(dm) {
+  if (!dm || !dm.text) return;
+  const c = findCharByHandle(S.W, dm.handle); if (!c || !c.unlocked || c.kind === "news") return;
+  pushDM(c.id, "them", String(dm.text));
+  notify("dm", `${c.name} sent you a message`, { dm: c.id });
+}
+/* snapshots also hold gems, stats and achievements so Rewind can't be used to farm them */
+function snapshot() { S.snaps.push(JSON.stringify({ W: S.W, gems: S.G.gems, stats: S.G.stats, ach: S.G.ach })); if (S.snaps.length > 6) S.snaps.shift(); }
+function restoreSnap() { const s = S.snaps.pop(); if (!s) return; const o = JSON.parse(s); S.W = o.W; S.G.gems = o.gems; S.G.stats = o.stats; S.G.ach = o.ach; }
+function rewind() {
+  if (isBusy()) return toast("Wait for the AI to finish first");
+  if (!S.snaps.length) return toast("Nothing to rewind yet");
+  restoreSnap(); saveWorld(); render(); toast("Rewound your last action");
+}
+
+/* ================= achievements ================= */
+const ACH = [
+  ["first_post", "🐣", "First post", "Post for the first time", 5, (G) => G.stats.posts >= 1],
+  ["viral1", "🔥", "Gone viral", "Have a post go viral", 10, (G) => G.stats.virals >= 1],
+  ["cancel1", "💀", "Cancelled", "Get cancelled for the first time", 10, (G) => G.stats.cancels >= 1],
+  ["f1k", "👥", "1K followers", "Reach 1,000 followers", 10, (G, W) => W && W.me.followers >= 1000],
+  ["f10k", "⭐", "10K followers", "Reach 10,000 followers", 15, (G, W) => W && W.me.followers >= 1e4],
+  ["f100k", "🌟", "100K followers", "Reach 100,000 followers", 25, (G, W) => W && W.me.followers >= 1e5],
+  ["f1m", "👑", "Millionaire", "Reach 1,000,000 followers", 50, (G, W) => W && W.me.followers >= 1e6],
+  ["lv5", "📈", "Level 5", "Reach level 5", 15, (G, W) => W && W.me.level >= 5],
+  ["bff", "💞", "Ride or die", "Get a relationship to 80", 15, (G, W) => W && W.chars.some(c => c.rel >= 80)],
+  ["enemy", "⚔️", "Arch-nemesis", "Drop a relationship to -60", 10, (G, W) => W && W.chars.some(c => c.rel <= -60)],
+  ["day7", "📅", "Survived a week", "Reach day 7 in one world", 15, (G, W) => W && W.day >= 7],
+  ["event3", "🎭", "Fixer", "Resolve 3 events", 10, (G) => G.stats.events >= 3],
+  ["act1", "🎬", "First scene", "Finish an activity with a character", 10, (G) => G.stats.acts >= 1],
+  ["unlock3", "🔓", "Full squad", "Have 4 characters in your circle", 15, (G, W) => W && W.chars.filter(c => c.unlocked && c.kind !== "news").length >= 4],
+  ["streak7", "🗓️", "7-day streak", "Open the app 7 days in a row", 20, (G) => G.streak.n >= 7]
+];
+function checkAch() {
+  const G = S.G, W = S.W;
+  for (const [id, e, t, , g, fn] of ACH) {
+    if (!G.ach[id] && fn(G, W)) { G.ach[id] = Date.now(); G.gems += g; notify("ach", `Achievement unlocked ${e} ${t} · +${g} gems`); setTimeout(() => toast(`${e} ${t} · +${g} gems`), 1400); }
+  }
+}
+
+/* ================= AI actions ================= */
+const REPLY_SHAPE = `{"handle":"@handle of a listed character, or a NEW random account handle","name":"display name (needed for random accounts)","text":"reply text"}`;
+const POST_SHAPE = `{"handle":"@handle","name":"display name for random accounts","text":"post text","image":"photo description or null"}`;
+function failed(e) { const m = aiErr(e); if (m) toast(m); }
+
+async function makePost(text, photo) {
+  const W = S.W, me = W.me;
+  if (!text.trim() && !photo) return;
+  if (guard()) return;
+  const useViral = S.view.boostViral && me.boosts.viral > 0;
+  const useClout = S.view.boostClout && me.boosts.clout > 0;
+  snapshot();
+  const p = { id: uid("p"), a: "me", t: text.trim(), img: mkImg(photo), day: W.day, ts: Date.now(), likes: 0, rts: 0, views: 0, replies: [], pending: true };
+  W.posts.unshift(p);
+  if (useViral) me.boosts.viral--; if (useClout) me.boosts.clout--;
+  S.view.boostViral = S.view.boostClout = false;
+  setBusy("People are seeing your post…"); render();
+  const prompt = `${ctx(W)}
+
+THE PLAYER JUST POSTED:
+"${p.t}"${p.img ? `\nwith a photo: ${p.img.d}` : ""}
+${useViral ? "VIRAL BOOST ACTIVE: this post must blow up (outcome viral, huge reach) unless it is truly offensive.\n" : ""}${useClout ? "CLOUT BOOST ACTIVE: more characters notice, follower gain is bigger.\n" : ""}
+Simulate how this world reacts, like a real Twitter/X timeline. Judge the post honestly: funny or clever posts gain humor; confident, mysterious, cool or iconic posts gain aura; cringe, rude or controversial posts can flop or get the player cancelled, more often at higher drama levels. Characters react according to their personality and their relationship with the player. Random accounts are fans, haters, stans, meme pages and lurkers.
+Scale the numbers to the player's ${me.followers} followers: a normal post gets views about 0.5-3x followers and likes about 2-15% of views; viral gets 10-60x views; a flop gets very little.
+${IMG_RULE}
+
+Reply with ONLY this JSON:
+{"outcome":"normal|viral|flop|drama|cancelled",
+"headline":"one short punchy line describing the outcome",
+"likes":0,"reposts":0,"views":0,
+"followers_change":0,"humor_change":0,"aura_change":0,
+"replies":[${REPLY_SHAPE}],
+"relationship_changes":[{"handle":"@...","change":0,"reason":"short"}],
+"character_posts":[${POST_SHAPE}],
+"news_post":${POST_SHAPE} or null,
+"dm":{"handle":"@listed character","text":"private message to the player"} or null,
+"memory":"one sentence recording what happened"}
+Rules: 3-7 replies mixing listed characters (only ones who would plausibly see it) and random accounts. humor_change and aura_change between -10 and 10. relationship change between -15 and 15. character_posts 0-2 (only listed characters). dm only if it really fits.`;
+  try {
+    const r = await ai(prompt);
+    const out = ["viral", "flop", "drama", "cancelled"].includes(r.outcome) ? r.outcome : "normal";
+    p.pending = false;
+    p.likes = Math.max(0, Math.round(num(r.likes))); p.rts = Math.max(0, Math.round(num(r.reposts))); p.views = Math.max(p.likes, Math.round(num(r.views)));
+    if (out !== "normal") p.tag = out;
+    for (const x of (r.replies || []).slice(0, 8)) if (x && x.text) p.replies.push({ id: uid("r"), a: authorFrom(W, x.handle, x.name), t: String(x.text), likes: rnd(0, Math.max(3, p.likes / 8)), ts: Date.now() });
+    const d = applyStats(r, useClout ? 2 : 1);
+    const rels = applyRels(r.relationship_changes);
+    addPosts(r.character_posts);
+    if (r.news_post && !W.muteNews) addPosts([r.news_post], "news");
+    proactiveDM(r.dm);
+    remember(r.memory || `${me.name} posted: ${p.t.slice(0, 80)}`);
+    S.G.stats.posts++; if (out === "viral") S.G.stats.virals++; if (out === "cancelled") S.G.stats.cancels++;
+    addXP(out === "viral" ? 35 : 20);
+    if (p.replies.length) notify("reply", `${p.replies.length} people replied to your post`, { post: p.id });
+    if (d.followers > 0) notify("follow", `${fmt(d.followers)} new followers`);
+    checkAch(); saveWorld();
+    showOutcome(out, r.headline, d, rels);
+  } catch (e) {
+    restoreSnap(); failed(e);
+    S.view.draft = text; S.view.photoDraft = photo || ""; S.view.photoOpen = !!photo;
+  } finally { setBusy(null); render(); }
+}
+
+async function makeReply(postId, text) {
+  const W = S.W, p = W.posts.find(x => x.id === postId); if (!p || !text.trim() || guard()) return;
+  snapshot();
+  const mine = { id: uid("r"), a: "me", t: text.trim(), likes: 0, ts: Date.now() };
+  p.replies.push(mine);
+  setBusy("Waiting for replies…"); render();
+  const thread = p.replies.slice(-10).map(r => `@${handleOf(W, r.a)}: ${String(r.t).slice(0, 200)}`).join("\n");
+  const prompt = `${ctx(W, { posts: 4 })}
+
+THREAD — original post by @${handleOf(W, p.a)}:
+"${String(p.t).slice(0, 400)}"${p.img ? `\n[photo: ${p.img.d}]` : ""}
+Replies so far (oldest first):
+${thread}
+
+The player (@${W.me.handle}) just replied: "${mine.t}"
+Simulate 1-4 follow-up replies in this thread (the original poster usually answers if they are a character; others may pile on).
+Reply with ONLY this JSON:
+{"replies":[${REPLY_SHAPE}],"likes_on_player_reply":0,"humor_change":0,"aura_change":0,"followers_change":0,
+"relationship_changes":[{"handle":"@...","change":0,"reason":"short"}],"memory":"one sentence, or empty if nothing notable"}`;
+  try {
+    const r = await ai(prompt);
+    const live = S.W.posts.find(x => x.id === postId);
+    const me2 = live.replies.find(x => x.id === mine.id); if (me2) me2.likes = Math.max(0, Math.round(num(r.likes_on_player_reply)));
+    for (const x of (r.replies || []).slice(0, 5)) if (x && x.text) live.replies.push({ id: uid("r"), a: authorFrom(S.W, x.handle, x.name), t: String(x.text), likes: rnd(0, 60), ts: Date.now() });
+    const d = applyStats(r); const rels = applyRels(r.relationship_changes);
+    if (r.memory) remember(r.memory);
+    addXP(10); checkAch(); saveWorld();
+    if (Object.keys(d).length || rels.length) showOutcome("mini", null, d, rels);
+  } catch (e) { restoreSnap(); failed(e); S.view.replyDraft = text; }
+  finally { setBusy(null); render(); }
+}
+
+async function sendDM(cid, text) {
+  const W = S.W, c = W.chars.find(x => x.id === cid); if (!c || !text.trim() || guard()) return;
+  snapshot();
+  pushDM(cid, "me", text.trim());
+  W.dmMeta[cid] = Object.assign(W.dmMeta[cid] || {}, { read: false });
+  S.typing[cid] = true; render();
+  const hist = (W.dms[cid] || []).slice(-22).map(m => m.f === "me" ? `${W.me.name}: ${m.t}` : m.f === "them" ? `${c.name}: ${m.t}` : `(${m.t})`).join("\n");
+  const prompt = `${ctx(W, { posts: 5 })}
+
+YOU ARE ROLEPLAYING ${c.name} (@${c.handle}) in a private DM (iMessage style) with the player ${W.me.name}.
+Character card: ${c.desc || c.bio}
+Current relationship: ${Math.round(c.rel)}/100${c.chem ? ", dynamic: " + c.chem : ""}${W.dmMeta[cid].left ? ". Earlier, " + c.name + " left the chat / stopped replying." : ""}
+DM history (oldest first):
+${hist}
+
+Write ${c.name}'s reply like a real person texting: short bubbles, their own voice; they can be moody, flirty, petty, sweet or busy. They may leave the chat ("brb", go offline, stop replying) when it fits, or leave the message on read (empty messages array) if it deserves that.
+Reply with ONLY this JSON:
+{"messages":["bubble 1","bubble 2"],"leaves":false,"relationship_change":0,"chemistry":"new relationship dynamic label if it clearly changed, else empty","memory":"one sentence if something important happened, else empty"}
+messages: 0-4 short bubbles. relationship_change between -10 and 10.`;
+  try {
+    const r = await ai(prompt);
+    const msgs = (Array.isArray(r.messages) ? r.messages : []).filter(Boolean).slice(0, 4);
+    const Wl = S.W, cl = Wl.chars.find(x => x.id === cid);
+    Wl.dmMeta[cid].read = true;
+    // stay "typing" (and busy) until the last bubble lands
+    for (let i = 0; i < msgs.length; i++) { await sleep(i ? 650 : 250); pushDM(cid, "them", String(msgs[i])); render(); }
+    if (r.leaves) { pushDM(cid, "sys", `${cl.name} left the chat`); Wl.dmMeta[cid].left = true; }
+    else if (msgs.length) Wl.dmMeta[cid].left = false;
+    cl.rel = clamp(num(cl.rel) + clamp(Math.round(num(r.relationship_change)), -10, 10), -100, 100);
+    if (r.chemistry && typeof r.chemistry === "string" && r.chemistry.length < 30 && r.chemistry !== cl.chem) { cl.chem = r.chemistry; pushDM(cid, "sys", `You and ${cl.name} are now: ${cl.chem}`); }
+    if (r.memory) remember(r.memory);
+    Wl.dmRead[cid] = Date.now();
+    addXP(5); checkAch(); saveWorld();
+  } catch (e) { S.typing[cid] = false; restoreSnap(); failed(e); S.view.dmDraft = text; }
+  finally { S.typing[cid] = false; render(); }
+}
+
+async function nextDay() {
+  const W = S.W;
+  if (guard()) return;
+  snapshot();
+  setBusy(`Starting day ${W.day + 1}…`); render();
+  const locked = W.chars.filter(c => !c.unlocked && c.kind !== "news").map(c => c.name).join(", ");
+  const prompt = `${ctx(W)}
+People who exist in this world but are not in the player's circle yet: ${locked || "-"}
+
+A NEW IN-WORLD DAY begins: day ${W.day + 1}. Advance the story: what are people posting today, what drama or opportunities show up around the player? Keep threads from the story memory going (consequences of the player's past actions) and add fresh hooks. The drama level sets how chaotic it gets.
+${IMG_RULE}
+Reply with ONLY this JSON:
+{"character_posts":[${POST_SHAPE}],
+"random_posts":[${POST_SHAPE}],
+"news_post":${POST_SHAPE} or null,
+"stories":[{"handle":"@listed character","text":"short story caption","image":"photo description or null"}],
+"events":[{"title":"short event title","desc":"2-3 sentences: the situation the player is in","choices":["choice 1","choice 2","choice 3"]}],
+"invite":{"handle":"@listed character","activity":"a short activity they invite the player to do together","text":"the DM invitation"} or null,
+"dm":{"handle":"@listed character","text":"a DM they send the player first"} or null,
+"trends":["#trend1","#trend2","#trend3","#trend4"],
+"followers_change":0,
+"memory":"one sentence: the headline of this day"}
+Counts: character_posts 3-5 (listed characters only), random_posts 1-3, stories 1-3 (most stories have an image), events exactly 2. Use null where nothing fits.`;
+  try {
+    const r = await ai(prompt, "big");
+    W.day++;
+    addPosts(r.random_posts); addPosts(r.character_posts);
+    if (r.news_post && !W.muteNews) addPosts([r.news_post], "news");
+    for (const s of (r.stories || []).slice(0, 4)) { const c = findCharByHandle(W, s.handle); if (c && (s.text || s.image)) W.stories.push({ id: uid("s"), a: c.id, t: String(s.text || ""), img: mkImg(s.image), bg: rnd(0, 5), day: W.day, ts: Date.now(), seen: false }); }
+    W.events = W.events.filter(e => !e.done && e.day >= W.day - 1).concat((r.events || []).slice(0, 2).filter(e => e && e.title).map(e => ({ id: uid("e"), title: String(e.title), desc: String(e.desc || ""), choices: (e.choices || []).slice(0, 3).map(String), day: W.day, done: false })));
+    if (r.invite && r.invite.activity) { const c = findCharByHandle(W, r.invite.handle); if (c && c.unlocked && c.kind !== "news") { W.invites.push({ id: uid("i"), cid: c.id, act: String(r.invite.activity), day: W.day }); pushDM(c.id, "them", String(r.invite.text || r.invite.activity)); notify("dm", `${c.name} invited you: ${r.invite.activity}`, { dm: c.id }); } }
+    proactiveDM(r.dm);
+    if (Array.isArray(r.trends)) W.trends = r.trends.slice(0, 5).map(String);
+    applyStats(r);
+    remember(r.memory || "A new day started");
+    if ((r.events || []).length) notify("event", `Day ${W.day}: ${r.events.length} new events are waiting in Explore`);
+    checkAch(); saveWorld();
+    S.view.tab = "feed"; S.view.post = null;
+    toast(`Day ${W.day} has started`);
+  } catch (e) { S.snaps.pop(); failed(e); }
+  finally { setBusy(null); render(); }
+}
+
+async function resolveEvent(eid, choice) {
+  const W = S.W, ev = W.events.find(e => e.id === eid); if (!ev || !choice.trim() || guard()) return;
+  snapshot();
+  ev.busy = true; setBusy("Seeing how it plays out…"); render();
+  const prompt = `${ctx(W)}
+
+EVENT: ${ev.title}
+${ev.desc}
+THE PLAYER CHOOSES: "${choice.trim()}"
+Decide the consequences fairly: good choices pay off, risky ones can backfire, and the skills ${W.me.skills.map(s => s.name + " lv" + s.lv).join(", ")} make related choices more likely to succeed.
+${IMG_RULE}
+Reply with ONLY this JSON:
+{"outcome":"normal|viral|flop|drama|cancelled","headline":"short punchy line","result":"2-4 sentences describing what happened",
+"followers_change":0,"humor_change":0,"aura_change":0,
+"relationship_changes":[{"handle":"@...","change":0,"reason":"short"}],
+"posts":[${POST_SHAPE}],
+"memory":"one sentence"}
+posts: 1-3 (listed characters or new random accounts).`;
+  try {
+    const r = await ai(prompt);
+    const live = S.W.events.find(e => e.id === eid);
+    live.done = true; live.choice = choice.trim(); live.result = String(r.result || r.headline || "");
+    const d = applyStats(r); const rels = applyRels(r.relationship_changes);
+    addPosts(r.posts, ["viral", "cancelled", "drama"].includes(r.outcome) ? r.outcome : null);
+    remember(r.memory || `${W.me.name} chose "${choice}" during "${ev.title}"`);
+    S.G.stats.events++; if (r.outcome === "viral") S.G.stats.virals++; if (r.outcome === "cancelled") S.G.stats.cancels++;
+    addXP(30); checkAch(); saveWorld();
+    showOutcome(r.outcome || "normal", r.headline, d, rels);
+  } catch (e) { restoreSnap(); failed(e); }
+  finally { for (const x of S.W.events) x.busy = false; setBusy(null); render(); }
+}
+
+/* ----- activities: a short interactive scene with one character ----- */
+async function startActivity(cid, title, inviteId) {
+  const W = S.W, c = W.chars.find(x => x.id === cid); if (!c || !title.trim() || guard()) return;
+  if (inviteId) W.invites = W.invites.filter(i => i.id !== inviteId);
+  W.act = { cid, title: title.trim(), lines: [], options: [], hist: [], turns: 0, done: false, busy: true };
+  openActivity();
+  const prompt = `${ctx(W, { posts: 4 })}
+
+START AN INTERACTIVE SCENE (visual-novel / text-adventure style) between the player ${W.me.name} and ${c.name}.
+Activity: ${W.act.title}
+Character card: ${c.desc || c.bio}. Relationship ${Math.round(c.rel)}/100${c.chem ? ", " + c.chem : ""}.
+Reply with ONLY this JSON:
+{"title":"scene title","narration":"2-3 sentences setting the scene, second person","line":"${c.name}'s first spoken line","options":["something the player could do or say","another","another"]}`;
+  try {
+    const r = await ai(prompt);
+    Object.assign(S.W.act, { title: String(r.title || title), options: (r.options || []).slice(0, 3).map(String), busy: false });
+    if (r.narration) S.W.act.lines.push({ k: "narr", t: String(r.narration) });
+    if (r.line) S.W.act.lines.push({ k: "char", t: String(r.line) });
+    saveWorld();
+  } catch (e) { S.W.act = null; failed(e); closeLayer(); render(); return; }
+  renderActivity();
+}
+async function actTurn(text) {
+  const W = S.W, A = W.act; if (!A || A.done || A.busy || !text.trim() || guard()) return;
+  const c = W.chars.find(x => x.id === A.cid); if (!c) return;
+  A.hist.push(JSON.stringify({ lines: A.lines, options: A.options, turns: A.turns, rel: c.rel }));
+  A.lines.push({ k: "me", t: text.trim() }); A.options = []; A.busy = true; A.turns++;
+  renderActivity();
+  const finish = A.turns >= 6;
+  const scene = A.lines.slice(-14).map(l => l.k === "narr" ? `[${l.t}]` : l.k === "char" ? `${c.name}: ${l.t}` : `${W.me.name}: ${l.t}`).join("\n");
+  const prompt = `${ctx(W, { posts: 3 })}
+
+INTERACTIVE SCENE with ${c.name} — activity: ${A.title}
+Character card: ${c.desc || c.bio}. Relationship ${Math.round(c.rel)}/100${c.chem ? ", " + c.chem : ""}.
+Scene so far:
+${scene}
+
+Continue the scene, reacting to the player's last action. ${finish ? "This is the FINAL beat: wrap the scene up with a satisfying ending and set done to true." : "Keep it moving; end the scene (done true) only if it naturally concludes."}
+Reply with ONLY this JSON:
+{"narration":"1-3 sentences, second person","line":"${c.name}'s spoken line (can be empty)","options":["next player option","another","another"],"relationship_change":0,"done":false,"summary":"if done: one sentence summary for story memory, else empty"}
+relationship_change between -8 and 8.`;
+  try {
+    const r = await ai(prompt);
+    if (r.narration) A.lines.push({ k: "narr", t: String(r.narration) });
+    if (r.line) A.lines.push({ k: "char", t: String(r.line) });
+    c.rel = clamp(num(c.rel) + clamp(Math.round(num(r.relationship_change)), -8, 8), -100, 100);
+    A.options = (r.options || []).slice(0, 3).map(String);
+    if (r.done || finish) {
+      A.done = true; A.options = [];
+      remember(r.summary || `${W.me.name} and ${c.name}: ${A.title}`);
+      S.G.stats.acts++; addXP(40); checkAch();
+    }
+  } catch (e) {
+    const h = A.hist.pop(); if (h) { const o = JSON.parse(h); A.lines = o.lines; A.options = o.options; A.turns = o.turns; c.rel = o.rel; }
+    failed(e);
+  } finally { A.busy = false; saveWorld(); renderActivity(); }
+}
+function actUndo() {
+  const W = S.W, A = W.act; if (!A || A.busy || !A.hist.length) return;
+  const c = W.chars.find(x => x.id === A.cid);
+  const o = JSON.parse(A.hist.pop()); A.lines = o.lines; A.options = o.options; A.turns = o.turns; A.done = false; if (c) c.rel = o.rel;
+  saveWorld(); renderActivity();
+}
+
+/* ----- unlocking characters ----- */
+function unlockChar(cid) {
+  const W = S.W, me = W.me, c = W.chars.find(x => x.id === cid);
+  if (!c || c.unlocked) return;
+  if (me.unlocks < 1) return toast("Clear a milestone first (upgrade skills to clear milestones)");
+  me.unlocks--; c.unlocked = true; c.followsMe = true; c.iFollow = true;
+  notify("follow", `${c.name} followed you`);
+  remember(`${c.name} joined ${me.name}'s circle`);
+  checkAch(); saveWorld(); render(); toast(`${c.name} followed you`);
+}
+function addCustomToWorld(libId) {
+  const W = S.W, me = W.me, L = S.G.library.find(x => x.id === libId); if (!L) return;
+  if (me.unlocks < 1) return toast("You need an unlock first");
+  if (W.chars.some(c => c.lib === libId)) return toast("This character is already in this world");
+  me.unlocks--;
+  W.chars.push({ id: uid("c"), lib: libId, name: L.name, handle: L.handle, bio: L.bio, desc: L.desc, look: L.look || "", av: L.av, followers: rnd(500, 50000), unlocked: true, followsMe: true, iFollow: true, kind: "char", rel: 10, chem: "" });
+  notify("follow", `${L.name} followed you`); remember(`${L.name} arrived in this world`);
+  checkAch(); saveWorld(); closeLayer(); render();
+}
+/* ================= rendering ================= */
+const app = $("#app");
+const scrollMem = {};
+function viewKey() { const v = S.view; return v.screen === "home" ? "home" : v.post ? "post:" + v.post : v.dm ? "dm:" + v.dm : "tab:" + v.tab; }
+function render() {
+  const sc = $(".scroll", app); if (sc) scrollMem[S.lastKey] = sc.scrollTop;
+  const ae = document.activeElement, aeId = ae && ae.id && app.contains(ae) ? ae.id : null;
+  const sel = aeId && "selectionStart" in ae ? [ae.selectionStart, ae.selectionEnd] : null;
+  app.innerHTML = S.view.screen === "home" || !S.W ? renderHome() : renderWorld();
+  const key = viewKey(); S.lastKey = key;
+  const sc2 = $(".scroll", app);
+  if (sc2) { if (S.view.dm && S.stickBottom !== false) sc2.scrollTop = sc2.scrollHeight; else sc2.scrollTop = scrollMem[key] || 0; }
+  if (aeId) { const el = document.getElementById(aeId); if (el) { el.focus({ preventScroll: true }); if (sel) try { el.setSelectionRange(sel[0], sel[1]); } catch { } } }
+  autoGrow();
+}
+function autoGrow() { document.querySelectorAll("textarea[data-grow]").forEach(t => { t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight, 160) + "px"; }); }
+function setBusy(t) { S.busy = t; }
+function busyBar() { return S.busy ? `<div class="thinking gut" role="status"><span class="spin"></span>${esc(S.busy)}</div>` : ""; }
+function meterPill() { const m = meterInfo(); return `<button class="pill energy num" data-act="api" data-meter title="${esc(m.title)}" aria-label="API usage">${ic("zap")}<span>${esc(m.label)}</span></button>`; }
+function keyNotice() {
+  return S.G.apiKey ? "" : `<div class="gut"><div class="notice row" style="align-items:flex-start"><span style="font-size:20px">🔑</span><div class="grow"><b>Connect OpenRouter to play.</b> Paste a free API key and the app uses free models only. <button class="btn sm accent" style="margin-top:8px" data-act="api">Add API key</button></div></div></div>`;
+}
+
+/* ---------- home ---------- */
+function renderHome() {
+  const G = S.G;
+  const worlds = [...G.worlds].sort((a, b) => num(b.last) - num(a.last));
+  return `
+  <header class="top gut"><div class="row">
+    <div class="logo grow">main<b>character</b></div>
+    ${meterPill()}
+    <button class="iconbtn hide-narrow" data-act="shop" aria-label="Shop">${ic("store")}</button>
+    ${CLOUD.state !== "off" ? `<button class="iconbtn" data-act="account" aria-label="Account" title="${esc(cloudLabel())}">${ic("user")}<span class="cdot ${CLOUD.state}"></span></button>` : ""}
+    <button class="iconbtn" data-act="settings" aria-label="Settings">${ic("gear")}</button>
+  </div></header>
+  <main class="scroll">
+    ${keyNotice()}
+    ${CLOUD.state === "out" ? `<div class="gut"><div class="notice row" style="align-items:flex-start;background:var(--violet-soft)"><span style="font-size:20px">☁️</span><div class="grow"><b>Keep your game safe.</b> Sign in to save your worlds to the cloud and keep playing on your phone or computer. <button class="btn sm accent" style="margin-top:8px" data-act="account">Sign in or sign up</button></div></div></div>` : ""}
+    <section class="hero-home gut">
+      <h1>Be anyone. Get <em>followed</em>. Go viral, or get cancelled.</h1>
+      <p class="muted" style="margin:.4em 0 0">Make a persona, drop into any world or fandom, and watch its characters follow you, post about you, slide into your DMs and start drama.</p>
+      <div class="row wrap" style="margin-top:12px">
+        <span class="pill hot">🔥 ${G.streak.n}-day streak</span>
+        <span class="pill gem num">${ic("gem")}${G.gems} gems</span>
+        ${canInstall() ? `<button class="pill" data-act="install">📲 Install app</button>` : ""}
+      </div>
+    </section>
+    <section class="sec gut" style="border:0">
+      <div class="row" style="margin-bottom:12px"><h3 class="grow" style="margin:0">Your worlds</h3>
+        <button class="btn accent sm" data-act="newWorld">${ic("plus")} New world</button></div>
+      <div class="col">
+      ${worlds.length ? worlds.map(w => `
+        <div class="world" data-act="openWorld" data-id="${esc(w.id)}" role="button" tabindex="0">
+          <div class="em" style="${avStyle(null, w.id)}">${esc(w.emoji || "🌍")}</div>
+          <div class="grow">
+            <div style="font-weight:700" class="ell">${esc(w.name)}${w.sample ? ' <span class="tiny muted">· sample</span>' : ""}</div>
+            <div class="small muted ell">as ${esc(w.me || "-")} · day ${w.day || 1} · ${fmt(w.followers || 0)} followers</div>
+          </div>
+          <span class="muted" style="transform:rotate(180deg);display:inline-flex;width:20px">${ic("back")}</span>
+        </div>`).join("") : `<div class="empty"><div class="em">🌏</div>No worlds yet. Tap “New world” to start.</div>`}
+      </div>
+    </section>
+    <section class="sec gut" style="border:0;padding-top:0">
+      <h3>Achievements</h3>
+      <div class="small muted">${Object.keys(G.ach).length}/${ACH.length} unlocked</div>
+      <div class="row wrap" style="margin-top:8px;gap:6px">${ACH.map(a => `<span title="${esc(a[2])}" style="font-size:22px;${G.ach[a[0]] ? "" : "filter:grayscale(1);opacity:.35"}">${a[1]}</span>`).join("")}</div>
+    </section>
+  </main>`;
+}
+
+/* ---------- world shell ---------- */
+function unreadDMs(W) { return W.chars.filter(c => c.unlocked && c.kind !== "news" && (W.dms[c.id] || []).some(m => m.f === "them" && m.ts > num(W.dmRead[c.id]))).length; }
+function renderWorld() {
+  const W = S.W, v = S.view;
+  const unN = W.notifs.filter(n => !n.read).length, unD = unreadDMs(W);
+  let body;
+  if (v.post) body = viewThread();
+  else if (v.dm) body = viewChat();
+  else body = ({ feed: viewFeed, explore: viewExplore, dms: viewDMs, notifs: viewNotifs, profile: viewProfile }[v.tab] || viewFeed)();
+  const tab = (id, icon, label, n) => `<button data-act="tab" data-id="${id}" ${v.tab === id && !v.post && !v.dm ? 'aria-current="page"' : ""}>${ic(icon)}${n ? `<span class="dot num">${n > 9 ? "9+" : n}</span>` : ""}<span>${label}</span></button>`;
+  return `
+  <header class="top gut"><div class="row" style="gap:6px">
+    <button class="iconbtn" data-act="${v.post || v.dm ? "back" : "home"}" aria-label="Back">${ic("back")}</button>
+    <div class="grow" style="line-height:1.2">
+      <div style="font-family:var(--font-display);font-size:17px" class="ell">${esc(W.emoji)} ${esc(W.name)}</div>
+      <div class="tiny muted">Day ${W.day} · ${esc(MADNESS[W.madness])}</div>
+    </div>
+    ${meterPill()}
+    <button class="iconbtn" data-act="rewind" aria-label="Rewind" title="Rewind your last action" ${S.snaps.length ? "" : 'style="opacity:.35"'}>${ic("rewind")}</button>
+  </div></header>
+  ${body}
+  <nav class="tabs" aria-label="Main">
+    ${tab("feed", "home", "Feed")}${tab("explore", "compass", "Explore", W.events.filter(e => !e.done).length + W.invites.length)}${tab("dms", "mail", "Messages", unD)}${tab("notifs", "bell", "Activity", unN)}${tab("profile", "user", "Profile")}
+  </nav>`;
+}
+
+function authorInfo(W, a) {
+  if (a === "me") return { name: W.me.name, handle: W.me.handle, av: W.me.av, key: "me", verified: W.me.followers >= 10000, kind: "me" };
+  if (a && typeof a === "object") return { name: a.n, handle: a.h, av: { e: a.e, c: a.c, st: a.st }, key: a.h, verified: false, kind: "rand" };
+  const c = W.chars.find(x => x.id === a) || { name: "user", handle: "user", av: { e: "🙂" }, id: "x" };
+  return { name: c.name, handle: c.handle, av: c.av, key: c.id, verified: c.kind === "news" || num(c.followers) >= 10000, kind: c.kind || "char", id: c.id };
+}
+const profA = A => A.kind === "rand" ? "" : A.kind === "me" ? "me" : A.id;
+const TAGS = { viral: ["viral", "🔥 Viral"], cancelled: ["cancel", "💀 Cancelled"], flop: ["news", "🥶 Flopped"], drama: ["drama", "🍿 Drama"], news: ["news", "📰 News"] };
+function postHTML(p) {
+  const W = S.W, A = authorInfo(W, p.a), tg = p.tag && TAGS[p.tag];
+  return `<article class="post gut" data-act="openPost" data-id="${esc(p.id)}">
+    <div data-act="profileOf" data-a="${esc(profA(A))}">${avatar(A.av, A.key, "", A.kind === "news" ? "news" : "")}</div>
+    <div class="grow">
+      <div class="who"><span class="name">${esc(A.name)}</span>${A.verified ? badge() : ""}<span class="handle">@${esc(A.handle)} · day ${p.day}</span></div>
+      ${p.t ? `<div class="text">${esc(p.t)}</div>` : ""}
+      ${photoHTML(p.img)}
+      ${p.pending ? `<div class="tiny muted" style="margin-top:6px">Posting…</div>` : ""}
+      ${tg ? `<span class="tag ${tg[0]}">${tg[1]}</span>` : ""}
+      <div class="acts num">
+        <button data-act="openPost" data-id="${esc(p.id)}" aria-label="Reply">${ic("reply")}${fmt(p.replies.length)}</button>
+        <button data-act="rt" data-id="${esc(p.id)}" class="${p.rted ? "on-rt" : ""}" aria-label="Repost">${ic("rt")}${fmt(p.rts)}</button>
+        <button data-act="like" data-id="${esc(p.id)}" class="${p.liked ? "on-like" : ""}" aria-label="Like">${ic("heart")}${fmt(p.likes)}</button>
+        <span style="display:inline-flex;align-items:center;gap:5px">${ic("views")}${fmt(p.views)}</span>
+      </div>
+    </div></article>`;
+}
+
+/* ---------- feed ---------- */
+const STORY_BG = ["linear-gradient(160deg,#E8285F,#7A2BE2)", "linear-gradient(160deg,#FF8A3D,#E8285F)", "linear-gradient(160deg,#2F6BFF,#18B5A5)", "linear-gradient(160deg,#3A1C71,#D76D77)", "linear-gradient(160deg,#0F9B6C,#B7D432)", "linear-gradient(160deg,#1B1418,#5B2238)"];
+function viewFeed() {
+  const W = S.W, me = W.me, v = S.view;
+  const byA = {}; for (const s of W.stories) (byA[s.a] = byA[s.a] || []).push(s);
+  const others = Object.keys(byA).filter(a => a !== "me").sort((a, b) => (byA[a].every(s => s.seen) ? 1 : 0) - (byA[b].every(s => s.seen) ? 1 : 0));
+  const mine = byA.me || [];
+  const storyItem = a => { const A = authorInfo(W, a); const seen = byA[a].every(s => s.seen); return `<button class="story" data-act="story" data-id="${esc(a)}"><span class="ring ${seen ? "seen" : ""}">${avatar(A.av, A.key, "md")}</span><span class="ell">${esc(A.name)}</span></button>`; };
+  return `<main class="scroll">
+    ${keyNotice()}${busyBar()}
+    <div class="stories gut">
+      <button class="story" data-act="${mine.length ? "story" : "myStory"}" data-id="me"><span class="ring ${mine.length && !mine.every(s => s.seen) ? "" : "seen"}" style="position:relative">${avatar(me.av, "me", "md")}<span class="plus" data-act="myStory">+</span></span><span class="ell">Your story</span></button>
+      ${others.map(storyItem).join("")}
+    </div>
+    <div class="composer gut">
+      ${avatar(me.av, "me")}
+      <div class="grow">
+        <label for="composer" class="sr">New post</label>
+        <textarea id="composer" data-grow data-draft="draft" placeholder="What's happening?" maxlength="600">${esc(v.draft || "")}</textarea>
+        ${v.photoOpen ? `<div class="row" style="margin-top:6px"><label for="photoIn" class="sr">Describe your photo</label><input class="in" id="photoIn" data-draft="photoDraft" maxlength="200" placeholder="Describe your photo (e.g. mirror selfie in a red jacket)" value="${esc(v.photoDraft || "")}"><button class="iconbtn" data-act="photoToggle" aria-label="Remove photo">${ic("x")}</button></div>` : ""}
+        <div class="bar">
+          <button class="boost" data-act="photoToggle" aria-pressed="${!!v.photoOpen}">📷 Photo</button>
+          <button class="boost" data-act="boost" data-id="viral" aria-pressed="${!!v.boostViral}" ${me.boosts.viral ? "" : "disabled style='opacity:.5'"}>🚀 Viral ×${me.boosts.viral}</button>
+          <button class="boost" data-act="boost" data-id="clout" aria-pressed="${!!v.boostClout}" ${me.boosts.clout ? "" : "disabled style='opacity:.5'"}>📣 Clout ×${me.boosts.clout}</button>
+          <span class="grow"></span>
+          <button class="btn accent sm" data-act="post" ${isBusy() ? "disabled" : ""}>Post</button>
+        </div>
+      </div>
+    </div>
+    ${W.posts.length ? W.posts.map(postHTML).join("") : `<div class="empty"><div class="em">📝</div>No posts yet. Make your first one.</div>`}
+    <div style="height:30px"></div>
+  </main>`;
+}
+
+/* ---------- thread ---------- */
+function viewThread() {
+  const W = S.W, p = W.posts.find(x => x.id === S.view.post);
+  if (!p) { S.view.post = null; return viewFeed(); }
+  const A = authorInfo(W, p.a), tg = p.tag && TAGS[p.tag];
+  return `<main class="scroll">
+    ${busyBar()}
+    <div class="thread-main gut">
+      <div class="row" data-act="profileOf" data-a="${esc(profA(A))}" style="cursor:pointer">${avatar(A.av, A.key, "", A.kind === "news" ? "news" : "")}
+        <div class="grow"><div class="row" style="gap:5px"><b class="ell">${esc(A.name)}</b>${A.verified ? badge() : ""}</div><div class="small muted">@${esc(A.handle)}</div></div></div>
+      ${p.t ? `<div class="text">${esc(p.t)}</div>` : ""}
+      ${photoHTML(p.img)}
+      ${tg ? `<span class="tag ${tg[0]}">${tg[1]}</span>` : ""}
+      <div class="small muted" style="margin-top:10px">Day ${p.day} · ${esc(W.name)}</div>
+    </div>
+    <div class="stats gut num"><span><b>${fmt(p.rts)}</b> Reposts</span><span><b>${fmt(p.likes)}</b> Likes</span><span><b>${fmt(p.views)}</b> Views</span></div>
+    <div class="actbar gut">
+      <button data-act="focusReply">${ic("reply")}Reply</button>
+      <button data-act="rt" data-id="${esc(p.id)}" class="${p.rted ? "on-rt" : ""}">${ic("rt")}Repost</button>
+      <button data-act="like" data-id="${esc(p.id)}" class="${p.liked ? "on-like" : ""}">${ic("heart")}Like</button>
+    </div>
+    ${p.replies.map(r => { const R = authorInfo(W, r.a); return `<div class="post gut" style="cursor:default">
+      <div data-act="profileOf" data-a="${esc(profA(R))}" style="cursor:pointer">${avatar(R.av, R.key, "sm", R.kind === "news" ? "news" : "")}</div>
+      <div class="grow"><div class="who"><span class="name">${esc(R.name)}</span>${R.verified ? badge() : ""}<span class="handle">@${esc(R.handle)}</span></div>
+      <div class="small muted">Replying to @${esc(A.handle)}</div>
+      <div class="text">${esc(r.t)}</div>
+      <div class="acts num" style="max-width:120px"><span style="display:inline-flex;gap:5px;align-items:center">${ic("heart")}${fmt(r.likes)}</span></div></div></div>`; }).join("")}
+    ${p.pending || p.replies.length ? "" : `<div class="tiny muted gut" style="padding-block:14px;text-align:center">No replies yet</div>`}
+  </main>
+  <div class="replybox gut">
+    <label for="replyIn" class="sr">Reply</label>
+    <textarea id="replyIn" data-grow data-draft="replyDraft" rows="1" placeholder="Post your reply" maxlength="400">${esc(S.view.replyDraft || "")}</textarea>
+    <button class="send" data-act="reply" data-id="${esc(p.id)}" aria-label="Send" ${isBusy() ? "disabled" : ""}>${ic("send", 2.4)}</button>
+  </div>`;
+}
+/* ---------- explore: day, trends, events, invites, activities ---------- */
+const ACT_IDEAS = ["Grab coffee together", "Go live together", "Shoot content for socials", "Hit a party tonight", "Talk backstage in secret", "Late-night practice", "Walk the night market", "Movie night"];
+function viewExplore() {
+  const W = S.W, v = S.view;
+  const circle = W.chars.filter(c => c.unlocked && c.kind !== "news");
+  const pending = W.events.filter(e => !e.done), done = W.events.filter(e => e.done).slice(-3).reverse();
+  if (!v.actChar || !circle.some(c => c.id === v.actChar)) v.actChar = circle[0]?.id || null;
+  return `<main class="scroll">
+    ${keyNotice()}${busyBar()}
+    <section class="sec gut">
+      <div class="kicker">Day ${W.day}</div><h3 style="margin:2px 0 0">Move the story forward</h3>
+      <div class="small muted">Start a new day: characters post, new events appear, and what you did comes back around.</div>
+      <button class="btn block" style="margin-top:12px" data-act="nextDay" ${isBusy() ? "disabled" : ""}>${ic("sun")} Start day ${W.day + 1}</button>
+    </section>
+    ${W.trends.length ? `<section class="sec gut"><h3>Trending</h3><div class="row wrap" style="gap:8px">${W.trends.map((t, i) => `<button class="chip" data-act="useTrend" data-id="${esc(t)}"><span class="muted tiny num">${i + 1}</span>${esc(t)}</button>`).join("")}</div></section>` : ""}
+    ${W.act && !W.act.done ? `<section class="sec gut"><div class="card"><div class="kicker">Scene in progress</div><div style="font-weight:700;margin:4px 0">${esc(W.act.title)}</div><button class="btn sm accent" data-act="resumeAct">Continue</button></div></section>` : ""}
+    <section class="sec gut">
+      <h3>Events</h3>
+      ${pending.length ? `<div class="col">${pending.map(e => `
+        <div class="card event">
+          <div class="kicker">Day ${e.day}</div>
+          <div style="font-weight:700;font-size:16px;margin:3px 0 4px">${esc(e.title)}</div>
+          <div class="small" style="white-space:pre-wrap">${esc(e.desc)}</div>
+          ${e.busy ? `<div class="thinking"><span class="spin"></span>Seeing how it plays out…</div>` : `
+          <div class="col" style="margin-top:10px;gap:8px">
+            ${e.choices.map(c => `<button class="opt" data-act="eventChoice" data-id="${esc(e.id)}" data-choice="${esc(c)}" ${isBusy() ? "disabled" : ""}>${esc(c)}</button>`).join("")}
+            <div class="row"><label class="sr" for="ev_${esc(e.id)}">Your own choice</label><input class="in" id="ev_${esc(e.id)}" placeholder="Or write your own move" maxlength="200">
+            <button class="btn sm" data-act="eventCustom" data-id="${esc(e.id)}" ${isBusy() ? "disabled" : ""}>Go</button></div>
+            <div class="tiny muted">+30 XP</div>
+          </div>`}
+        </div>`).join("")}</div>` : `<div class="small muted">No events right now. Start a new day to stir things up.</div>`}
+      ${done.length ? `<div class="col" style="margin-top:12px">${done.map(e => `<div class="card"><div class="small muted">${esc(e.title)} · you chose “${esc(e.choice)}”</div><div class="small" style="margin-top:4px;white-space:pre-wrap">${esc(e.result)}</div></div>`).join("")}</div>` : ""}
+    </section>
+    ${W.invites.length ? `<section class="sec gut"><h3>Invites</h3><div class="col">${W.invites.map(i => { const c = W.chars.find(x => x.id === i.cid); return c ? `<div class="card row">${avatar(c.av, c.id, "sm")}<div class="grow"><b>${esc(c.name)}</b><div class="small">${esc(i.act)}</div></div><button class="btn sm accent" data-act="acceptInvite" data-id="${esc(i.id)}">Go</button><button class="iconbtn" data-act="declineInvite" data-id="${esc(i.id)}" aria-label="Decline">${ic("x")}</button></div>` : ""; }).join("")}</div></section>` : ""}
+    <section class="sec gut">
+      <h3>Activities</h3>
+      ${circle.length ? `
+      <div class="small muted" style="margin-bottom:8px">Play a scene with a character, beat by beat. Pick an option or write your own, and undo a move if you want.</div>
+      <div class="row wrap" style="gap:8px;margin-bottom:10px">${circle.map(c => `<button class="chip" data-act="actChar" data-id="${esc(c.id)}" aria-pressed="${v.actChar === c.id}">${esc(c.name)}</button>`).join("")}</div>
+      <div class="row wrap" style="gap:8px;margin-bottom:10px">${ACT_IDEAS.map(a => `<button class="chip" data-act="actIdea" data-id="${esc(a)}">${esc(a)}</button>`).join("")}</div>
+      <div class="row"><label class="sr" for="actIn">Activity</label><input class="in" id="actIn" data-draft="actDraft" value="${esc(v.actDraft || "")}" placeholder="Or type any activity" maxlength="120">
+      <button class="btn sm accent" data-act="startAct">Start</button></div>
+      <div class="tiny muted" style="margin-top:6px">Finish a scene for +40 XP</div>` : `<div class="small muted">No one in your circle yet.</div>`}
+    </section>
+    <div style="height:30px"></div>
+  </main>`;
+}
+
+/* ---------- DMs ---------- */
+function viewDMs() {
+  const W = S.W;
+  const list = W.chars.filter(c => c.unlocked && c.kind !== "news").map(c => { const m = W.dms[c.id] || []; return { c, last: m[m.length - 1] }; }).sort((a, b) => num(b.last?.ts) - num(a.last?.ts));
+  return `<main class="scroll dmlist">
+    ${keyNotice()}
+    <div class="gut" style="padding-block:14px 4px"><h3 style="font-size:20px">Messages</h3></div>
+    ${list.map(({ c, last }) => { const un = (W.dms[c.id] || []).some(m => m.f === "them" && m.ts > num(W.dmRead[c.id])); return `
+      <div class="item gut" data-act="openDM" data-id="${esc(c.id)}" role="button" tabindex="0">
+        ${avatar(c.av, c.id)}
+        <div class="grow"><div class="row" style="gap:6px"><b class="ell">${esc(c.name)}</b>${c.chem ? `<span class="tiny muted ell">· ${esc(c.chem)}</span>` : ""}</div>
+        <div class="small ${un ? "" : "muted"} ell" style="${un ? "font-weight:600" : ""}">${last ? (last.f === "me" ? "You: " : "") + esc(last.t) : "Say hi"}</div></div>
+        ${un ? '<span class="unread"></span>' : ""}
+      </div>`; }).join("") || `<div class="empty"><div class="em">💬</div>No one in your circle yet.</div>`}
+  </main>`;
+}
+function relColor(r) { return r >= 0 ? "var(--good)" : "var(--bad)"; }
+function relBar(r) { const w = Math.abs(r) / 2; return `<div class="relbar" title="Relationship ${Math.round(r)}"><span class="mid"></span><span class="fill" style="${r >= 0 ? "left:50%" : `left:${50 - w}%`};width:${w}%;background:${relColor(r)}"></span></div>`; }
+function viewChat() {
+  const W = S.W, c = W.chars.find(x => x.id === S.view.dm);
+  if (!c) { S.view.dm = null; return viewDMs(); }
+  W.dmRead[c.id] = Date.now();
+  const msgs = W.dms[c.id] || [];
+  let out = "", lastDay = null;
+  const lastMe = msgs.map(m => m.f).lastIndexOf("me");
+  msgs.forEach((m, i) => {
+    if (m.day !== lastDay) { out += `<div class="daysep">Day ${m.day}</div>`; lastDay = m.day; }
+    out += `<div class="bub ${m.f}">${esc(m.t)}</div>`;
+    if (i === lastMe && i === msgs.length - 1 && !S.typing[c.id] && W.dmMeta[c.id]?.read) out += `<div class="receipt">Read</div>`;
+  });
+  return `<div class="gut" style="padding-block:10px;border-bottom:1px solid var(--line)">
+      <div class="row" data-act="profileOf" data-a="${esc(c.id)}" style="cursor:pointer">${avatar(c.av, c.id, "sm")}
+        <div class="grow"><div class="row" style="gap:5px"><b class="ell">${esc(c.name)}</b>${num(c.followers) >= 10000 ? badge() : ""}</div>
+        <div class="tiny muted">${c.chem ? esc(c.chem) + " · " : ""}relationship ${Math.round(c.rel)}</div></div>
+        <div style="width:80px">${relBar(c.rel)}</div></div></div>
+    <main class="scroll"><div class="chat gut">
+      ${out || `<div class="bub sys">Start a conversation with ${esc(c.name)}</div>`}
+      ${S.typing[c.id] ? `<div class="typing" aria-label="typing"><i></i><i></i><i></i></div>` : ""}
+    </div></main>
+    <div class="replybox gut">
+      <label for="dmIn" class="sr">Message</label>
+      <textarea id="dmIn" data-grow data-draft="dmDraft" rows="1" placeholder="Message ${esc(c.name)}" maxlength="500">${esc(S.view.dmDraft || "")}</textarea>
+      <button class="send" data-act="sendDM" data-id="${esc(c.id)}" aria-label="Send" ${isBusy() ? "disabled" : ""}>${ic("send", 2.4)}</button>
+    </div>`;
+}
+
+/* ---------- notifications ---------- */
+const NIC = { like: "❤️", reply: "💬", follow: "👤", dm: "✉️", level: "⬆️", milestone: "🏁", event: "🎭", ach: "🏆", news: "📰" };
+function viewNotifs() {
+  const W = S.W;
+  const html = W.notifs.map(n => `<div class="post gut" style="${n.read ? "" : "background:color-mix(in srgb,var(--accent-soft) 45%,transparent)"}" data-act="notif" data-id="${esc(n.id)}">
+    <div style="width:34px;text-align:center;font-size:20px">${NIC[n.k] || "🔔"}</div>
+    <div class="grow"><div>${esc(n.t)}</div><div class="tiny muted">${new Date(n.ts).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}</div></div></div>`).join("");
+  setTimeout(() => { if (S.W === W && S.view.tab === "notifs" && W.notifs.some(n => !n.read)) { W.notifs.forEach(n => n.read = true); saveWorld(); } }, 1500);
+  return `<main class="scroll"><div class="gut" style="padding-block:14px 4px"><h3 style="font-size:20px">Activity</h3></div>${html || `<div class="empty"><div class="em">🔔</div>Nothing new yet</div>`}</main>`;
+}
+
+/* ---------- profile ---------- */
+function gauge(label, val, color, max = 100) {
+  return `<div class="gauge"><div class="lbl"><span>${label}</span><b class="num">${Math.round(val)}</b></div><div class="trk"><div class="fill" style="width:${clamp(val / max * 100, 2, 100)}%;background:${color}"></div></div></div>`;
+}
+function viewProfile() {
+  const W = S.W, me = W.me, G = S.G;
+  const circle = W.chars.filter(c => c.unlocked && c.kind !== "news"), locked = W.chars.filter(c => !c.unlocked && c.kind !== "news");
+  const myPosts = W.posts.filter(p => p.a === "me"), doneM = me.milestones.filter(m => m.done).length;
+  return `<main class="scroll">
+    <section class="gut" style="padding-block:18px 14px;border-bottom:1px solid var(--line)">
+      <div class="row" style="align-items:flex-start">${avatar(me.av, "me", "lg")}<span class="grow"></span>
+        <button class="btn ghost sm" data-act="editMe">${ic("edit")} Edit profile</button></div>
+      <div class="row" style="gap:6px;margin-top:10px"><h2 style="font-size:22px">${esc(me.name)}</h2>${me.followers >= 10000 ? badge() : ""}</div>
+      <div class="muted">@${esc(me.handle)}</div>
+      ${me.bio ? `<p style="margin:8px 0 0;white-space:pre-wrap">${esc(me.bio)}</p>` : ""}
+      <div class="row num" style="gap:16px;margin-top:10px"><span><b>${fmt(circle.length)}</b> <span class="muted">Following</span></span><span><b>${fmt(me.followers)}</b> <span class="muted">Followers</span></span></div>
+    </section>
+    <section class="sec gut">
+      <div class="row"><h3 class="grow" style="margin:0">Level ${me.level}</h3><span class="small muted num">${me.xp}/${xpNeed(me.level)} XP</span></div>
+      <div class="gauge" style="margin-top:8px"><div class="trk"><div class="fill" style="width:${me.xp / xpNeed(me.level) * 100}%;background:var(--accent)"></div></div></div>
+      <div class="grid2" style="margin-top:12px">
+        <div class="statbox">${gauge("😂 Humor", me.humor, "var(--gold)")}</div>
+        <div class="statbox">${gauge("✨ Aura", me.aura, "var(--violet)")}</div>
+      </div>
+      <div class="tiny muted" style="margin-top:8px">Earn XP from posts, replies, DMs, events and activities.</div>
+    </section>
+    <section class="sec gut">
+      <div class="row"><h3 class="grow" style="margin:0">Goal</h3><button class="btn ghost sm" data-act="editGoal">${ic("edit")} Edit</button></div>
+      <p style="margin:6px 0 0">${esc(me.goal || "-")}</p>
+    </section>
+    <section class="sec gut">
+      <div class="row"><h3 class="grow" style="margin:0">Skills</h3><span class="pill hot num">${me.sp} skill point${me.sp === 1 ? "" : "s"}</span></div>
+      <div class="col" style="margin-top:10px">${me.skills.map((s, i) => `
+        <div class="row card" style="padding:12px">
+          <div class="grow"><div style="font-weight:700">${esc(s.name)} <span class="small muted num">Lv ${s.lv}/10</span></div><div class="small muted">${esc(s.desc || "")}</div>
+          <div style="height:6px;border-radius:4px;background:var(--surface-2);margin-top:6px;overflow:hidden"><div style="height:100%;width:${s.lv * 10}%;background:var(--accent)"></div></div></div>
+          <button class="btn sm ${me.sp ? "accent" : "soft"}" data-act="upSkill" data-id="${i}" ${s.lv >= 10 ? "disabled" : ""}>Upgrade</button>
+        </div>`).join("")}</div>
+    </section>
+    <section class="sec gut">
+      <div class="row"><h3 class="grow" style="margin:0">Milestones</h3><span class="small muted num">${doneM}/${me.milestones.length}</span></div>
+      <div class="small muted" style="margin:4px 0 8px">Every 2 skill upgrades clears a milestone, and each milestone lets you unlock one character.</div>
+      <ol class="list-plain">${me.milestones.map((m, j) => `<li class="row small" style="${m.done ? "" : "color:var(--muted)"}"><span style="width:22px">${m.done ? "✅" : "⬜"}</span><span class="grow">${esc(m.t)}</span><span class="tiny muted num">${m.done ? "" : (j + 1) * 2 + " upgrades"}</span></li>`).join("")}</ol>
+    </section>
+    <section class="sec gut">
+      <div class="row"><h3 class="grow" style="margin:0">Characters</h3>${me.unlocks ? `<span class="pill hot">${me.unlocks} unlock${me.unlocks === 1 ? "" : "s"} ready</span>` : ""}</div>
+      <div class="col" style="margin-top:10px">
+        ${circle.map(c => `<div class="row" data-act="profileOf" data-a="${esc(c.id)}" style="cursor:pointer">${avatar(c.av, c.id, "sm")}<div class="grow"><div class="row" style="gap:5px"><b class="ell">${esc(c.name)}</b><span class="tiny muted ell">${esc(c.chem || "")}</span></div>${relBar(c.rel)}</div><span class="small num" style="color:${relColor(c.rel)};width:34px;text-align:right">${Math.round(c.rel)}</span></div>`).join("")}
+        ${locked.map(c => `<div class="row" style="opacity:.8">${avatar(c.av, c.id, "sm")}<div class="grow"><b class="ell">${esc(c.name)}</b><div class="tiny muted ell">${esc(c.bio || "")}</div></div>
+          ${me.unlocks ? `<button class="btn sm accent" data-act="unlock" data-id="${esc(c.id)}">Unlock</button>` : `<span class="muted" style="width:20px">${ic("lock")}</span>`}</div>`).join("")}
+        <button class="btn ghost sm" data-act="addCustom" style="align-self:flex-start">${ic("plus")} Add one of my characters</button>
+      </div>
+    </section>
+    <section class="sec gut">
+      <h3>Items</h3>
+      <div class="row wrap"><span class="pill gem num">${ic("gem")}${G.gems} gems</span><span class="pill num">🚀 ${me.boosts.viral}</span><span class="pill num">📣 ${me.boosts.clout}</span>
+      <button class="btn sm soft" data-act="shop">${ic("store")} Shop</button></div>
+    </section>
+    <section class="sec gut">
+      <h3>Achievements</h3>
+      ${ACH.map(a => `<div class="ach ${G.ach[a[0]] ? "" : "locked"}"><div class="ic">${a[1]}</div><div class="grow"><b>${esc(a[2])}</b><div class="small muted">${esc(a[3])}</div></div><span class="tiny muted num">+${a[4]} 💎</span></div>`).join("")}
+    </section>
+    <section class="sec gut">
+      <div class="row wrap"><button class="btn ghost sm" data-act="worldSettings">${ic("gear")} World settings</button><button class="btn ghost sm" data-act="settings">App settings</button></div>
+    </section>
+    <div class="gut" style="padding-block:14px 4px"><h3>Your posts</h3></div>
+    ${myPosts.map(postHTML).join("") || `<div class="empty">No posts yet</div>`}
+    <div style="height:30px"></div>
+  </main>`;
+}
+
+/* ---------- toast & outcome ---------- */
+let tToast = 0;
+function toast(t) { const el = $("#toast"); el.textContent = t; el.hidden = false; clearTimeout(tToast); tToast = setTimeout(() => el.hidden = true, 3600); }
+const OUT = { viral: "🔥 Viral!", cancelled: "💀 Cancelled", flop: "🥶 Flopped", drama: "🍿 Drama incoming", normal: "✅ Posted", mini: "" };
+let tOut = 0;
+function showOutcome(kind, headline, d, rels) {
+  let el = $("#outcome"); if (el) el.remove();
+  const ds = [];
+  if (d.followers) ds.push(`<span class="delta ${d.followers > 0 ? "up" : "down"}">${sign(d.followers)} followers</span>`);
+  if (d.humor) ds.push(`<span class="delta ${d.humor > 0 ? "up" : "down"}">${sign(d.humor)} humor</span>`);
+  if (d.aura) ds.push(`<span class="delta ${d.aura > 0 ? "up" : "down"}">${sign(d.aura)} aura</span>`);
+  for (const r of (rels || []).slice(0, 4)) ds.push(`<span class="delta ${r.d > 0 ? "up" : "down"}">${esc(r.name)} ${r.d > 0 ? "♥" : "💢"} ${sign(r.d)}</span>`);
+  if (!OUT[kind] && !headline && !ds.length) return;
+  el = document.createElement("div"); el.id = "outcome"; el.className = kind; el.setAttribute("role", "status");
+  el.innerHTML = `${OUT[kind] ? `<div class="big">${OUT[kind]}</div>` : ""}${headline ? `<div class="small" style="margin-top:2px">${esc(headline)}</div>` : ""}${ds.length ? `<div class="deltas num">${ds.join("")}</div>` : ""}`;
+  el.addEventListener("click", () => el.remove());
+  document.body.appendChild(el);
+  clearTimeout(tOut); tOut = setTimeout(() => el.remove(), 5200);
+}
+/* ================= sheets (modals) ================= */
+const layer = $("#layer");
+function openSheet(fn, full) { S.sheet = { fn, full }; refreshSheet(true); }
+function refreshSheet(first) {
+  if (!S.sheet) return;
+  const body = layer.querySelector(".sh-body"), st = body ? body.scrollTop : 0;
+  const ae = document.activeElement, aeId = ae && ae.id && layer.contains(ae) ? ae.id : null;
+  layer.innerHTML = `<div class="scrim" data-act="scrim"><div class="sheet ${S.sheet.full ? "full" : ""}" role="dialog" aria-modal="true">${S.sheet.fn()}</div></div>`;
+  if (!first) { const b = layer.querySelector(".sh-body"); if (b) b.scrollTop = st; }
+  if (aeId) { const el = document.getElementById(aeId); if (el) el.focus({ preventScroll: true }); }
+  autoGrow();
+}
+function closeLayer() { S.sheet = null; layer.innerHTML = ""; }
+const head = (title, extra = "") => `<div class="sh-head gut"><button class="iconbtn" data-act="close" aria-label="Close">${ic("x")}</button><h2 class="ell">${title}</h2>${extra}</div>`;
+const chips = (list, cur, act) => `<div class="row wrap" style="gap:8px">${list.map(([k, l]) => `<button class="chip" data-act="${act}" data-id="${esc(k)}" aria-pressed="${cur === k}">${esc(l)}</button>`).join("")}</div>`;
+
+/* ---------- API & usage (OpenRouter) ---------- */
+function openApi(msg) { S.apiMsg = msg || ""; openSheet(sheetApi); if (!S.models) loadModels().then(() => refreshSheet()); refreshKey(); }
+function sheetApi() {
+  const G = S.G, k = S.key, fr = k && k.free_model_daily_requests;
+  const models = S.models || [];
+  const inList = models.some(m => m.id === G.model);
+  return head("API & usage") + `<div class="sh-body"><div class="col gut" style="gap:14px">
+    ${S.apiMsg ? `<div class="notice">${esc(S.apiMsg)}</div>` : ""}
+    <div class="field"><label for="keyIn">OpenRouter API key</label>
+      <div class="row"><input class="in" id="keyIn" type="password" autocomplete="off" placeholder="sk-or-v1-…" value="${esc(G.apiKey)}"><button class="btn sm accent" data-act="keySave">Save</button></div>
+      <div class="tiny muted">Make a free key at <a href="https://openrouter.ai/keys" target="_blank" rel="noopener">openrouter.ai/keys</a>. It stays in this browser only and is sent only to OpenRouter.</div></div>
+    ${G.apiKey ? `<div class="card col" style="gap:10px">
+      <div class="row"><b class="grow">Usage on this key</b><button class="btn sm soft" data-act="keyRefresh">Refresh</button></div>
+      ${!k ? `<div class="thinking"><span class="spin"></span>Checking your key…</div>` : k.error ? `<div class="small" style="color:var(--bad)">${esc(k.error)}</div>` : `
+        ${k.label ? `<div class="small muted">Key: ${esc(k.label)}</div>` : ""}
+        ${fr ? `<div><div class="row small"><span class="grow">Free-model requests today</span><b class="num">${fr.remaining ?? "?"} left of ${fr.limit ?? "?"}</b></div>
+          <div class="meter" style="margin-top:6px"><i style="width:${fr.limit ? clamp((fr.remaining ?? 0) / fr.limit * 100, 0, 100) : 0}%"></i></div>
+          <div class="tiny muted" style="margin-top:4px">Resets at 00:00 UTC (07:00 in Thailand). Limits: 20 per minute; 50 per day, or 1,000 per day once you've bought $10 of credits ever.</div></div>` : ""}
+        <div class="grid2">
+          <div class="statbox"><div class="tiny muted">Credits used today</div><div class="v num">$${Number(k.usage_daily || 0).toFixed(4)}</div></div>
+          <div class="statbox"><div class="tiny muted">Credits left on key</div><div class="v num">${k.limit_remaining == null ? "No limit" : "$" + Number(k.limit_remaining).toFixed(2)}</div></div>
+        </div>`}
+      <div class="tiny muted num">Requests sent from this app today: ${G.req.day === todayKey() ? G.req.n : 0}</div>
+    </div>` : ""}
+    <div class="field"><label for="modelSel">AI model</label>
+      ${S.models == null ? `<div class="thinking"><span class="spin"></span>Loading free models…</div>` : models.length ? `
+      <select class="in" id="modelSel" data-act-change="modelPick">${inList ? "" : `<option value="">${G.model ? "Custom: " + esc(G.model) : "Pick a free model"}</option>`}${models.map(m => `<option value="${esc(m.id)}" ${m.id === G.model ? "selected" : ""}>${esc(m.name)}${m.ctx ? " · " + Math.round(m.ctx / 1000) + "K" : ""}</option>`).join("")}</select>` : `<div class="small" style="color:var(--bad)">Couldn't load the model list. Check your connection, or type a model id below.</div>`}
+      <div class="row"><input class="in" id="modelCustom" placeholder="or type a model id, e.g. deepseek/deepseek-chat-v3-0324:free" value="${inList ? "" : esc(G.model)}"><button class="btn sm soft" data-act="modelCustom">Use</button></div>
+      <div class="tiny muted">Only models ending in <code class="k">:free</code> are free. Bigger models write better stories and follow the game format more reliably. If one model is busy, switch to another.</div>
+      <button class="btn sm ghost" style="align-self:flex-start" data-act="modelsReload">Reload model list</button></div>
+    ${G.apiKey ? `<button class="btn sm ghost" style="align-self:flex-start;color:var(--bad)" data-act="keyRemove">Remove key from this browser</button>` : ""}
+  </div></div>`;
+}
+
+/* ---------- create world ---------- */
+const PRESETS = [
+  ["🎓", "Northstar University", "Campus drama: faculty icons, a scary cheer captain, a chaotic friend group and an anonymous tea page"],
+  ["🎤", "NOVA9 Idol Trainees", "Trainees about to debut fight for the center spot while fandoms war and leaks drop daily"],
+  ["🪄", "Astra Academy of Magic", "A hidden magic school in the mountains: four houses, the annual tournament, secrets under the library"],
+  ["🎬", "Prime-Time Drama Set", "Actors, producers, shipped co-stars, ratings wars and entertainment reporters watching every move"],
+  ["🏙️", "City Influencers", "Café hopping, brand deals, sponsor drama and the influencers who run the explore page"],
+  ["🏰", "Court of Elvar", "Fantasy royals: princes, knights, a palace witch and a secret plot for the throne everyone posts about"],
+  ["🚀", "Orion Station", "A crew in deep space, a ship AI acting strange, and a mysterious signal from the next planet"]
+];
+const VIBES = ["Funny", "Mysterious", "Spicy", "Sweet", "Villain", "Main character", "Fresh newcomer", "Already famous"];
+const EMOJIS = ["😎", "🌙", "🦊", "🐰", "🐻‍❄️", "⭐", "🍓", "🐯", "🦋", "🎀", "🖤", "🍀", "👑", "🐉", "🌸", "🧸", "🎧", "🐼", "🔥", "🍜"];
+function swatches(cur, act) { return `<div class="row wrap" style="gap:8px">${COLORS.map((_, i) => `<button data-act="${act}" data-id="${i}" aria-label="Color ${i + 1}" style="width:30px;height:30px;border-radius:50%;${avStyle({ c: i })};${cur === i ? "box-shadow:0 0 0 2px var(--surface),0 0 0 4px var(--accent)" : ""}"></button>`).join("")}</div>`; }
+function avPicker(av, key, pfx) {
+  return `<div class="row">${avatar(av, key, "lg")}<div class="col grow" style="gap:8px"><button class="btn sm soft" data-act="${pfx}Shuffle" style="align-self:flex-start">🎲 Shuffle look</button><div class="tiny muted">Pick a style and color, shuffle until it feels right.</div></div></div>
+    <div class="row wrap" style="gap:6px">${AV_STYLES.map(s => `<button data-act="${pfx}Style" data-id="${s}" aria-label="${s}" aria-pressed="${av.st === s}" style="width:48px;height:48px;border-radius:12px;padding:2px;background:${av.st === s ? "var(--accent-soft)" : "var(--surface-2)"};${av.st === s ? "outline:2px solid var(--accent)" : ""}"><img src="${esc(avURL({ st: s, sd: av.sd }, key))}" alt="" style="width:100%;height:100%" onerror="this.remove()"></button>`).join("")}</div>
+    ${swatches(av.c, pfx + "Color")}`;
+}
+function startCreate() {
+  S.cw = { step: 1, preset: 0, custom: "", madness: 3, imgStyle: "photo", name: "", handle: "", bio: "", look: "", vibe: "Funny", av: { e: "😎", c: 0, st: "notionists", sd: uid() }, libPick: [], bios: [], gen: null, pick: null, busy: false };
+  openSheet(sheetCreate, true);
+}
+function sheetCreate() {
+  const c = S.cw;
+  const title = ["", "Pick a world", "Create your persona", "Building your world", "Choose your first follower"][c.step];
+  let b = "";
+  if (c.step === 1) {
+    b = `<div class="col gut" style="gap:14px">
+      <div class="small muted">Pick a ready-made world, or type any fandom, series or scenario you want to live in.</div>
+      <div class="grid2">${PRESETS.map((p, i) => `<button class="preset" data-act="cwPreset" data-id="${i}" aria-pressed="${c.preset === i}"><span class="em">${p[0]}</span><b>${esc(p[1])}</b><span class="tiny muted">${esc(p[2])}</span></button>`).join("")}
+        <button class="preset" data-act="cwPreset" data-id="-1" aria-pressed="${c.preset === -1}"><span class="em">✏️</span><b>Create your own</b><span class="tiny muted">Any fandom, or a story you made up</span></button></div>
+      ${c.preset === -1 ? `<div class="field"><label for="cwCustom">World, fandom or scenario</label><textarea class="in" id="cwCustom" data-cw="custom" maxlength="1500" placeholder="e.g. Harry Potter, 6th year, I'm a transfer student sorted into Slytherin">${esc(c.custom)}</textarea></div>
+      ${S.G.library.length ? `<div class="field"><label>Bring your own characters into this world</label><div class="row wrap" style="gap:8px">${S.G.library.map(l => `<button class="chip" data-act="cwLib" data-id="${esc(l.id)}" aria-pressed="${c.libPick.includes(l.id)}">${esc(l.name)}</button>`).join("")}</div></div>` : ""}` : ""}
+      <div class="field"><label for="cwMad">Madness: <span id="cwMadL">${c.madness} · ${esc(MADNESS[c.madness])}</span></label><input type="range" id="cwMad" min="1" max="5" step="1" value="${c.madness}" data-cw="madness"></div>
+      <div class="field"><label>Photo style in this world</label>${chips([["photo", "Realistic photos"], ["anime", "Anime"], ["art", "Digital art"]], c.imgStyle, "cwImg")}</div>
+      <button class="btn accent block" data-act="cwNext">Next</button>
+    </div>`;
+  } else if (c.step === 2) {
+    b = `<div class="col gut" style="gap:14px">
+      ${avPicker(c.av, "cw", "cw")}
+      <div class="field"><label for="cwName">Display name</label><input class="in" id="cwName" data-cw="name" maxlength="40" value="${esc(c.name)}" placeholder="e.g. Mia"></div>
+      <div class="field"><label for="cwHandle">Username (@)</label><input class="in" id="cwHandle" data-cw="handle" maxlength="24" value="${esc(c.handle)}" placeholder="e.g. mia.shoots"></div>
+      <div class="field"><label>Vibe</label>${chips(VIBES.map(v => [v, v]), c.vibe, "cwVibe")}</div>
+      <div class="field"><label for="cwLook">How you look (used for photos of you)</label><input class="in" id="cwLook" data-cw="look" maxlength="200" value="${esc(c.look)}" placeholder="e.g. short black bob, silver hoops, oversized denim jacket"></div>
+      <div class="field"><label for="cwBio">Bio / backstory (more detail = better role-play)</label><textarea class="in" id="cwBio" data-cw="bio" maxlength="1500" placeholder="Who are you, what do you want, what are you hiding?">${esc(c.bio)}</textarea>
+        <button class="btn soft sm" data-act="cwBioAI" style="align-self:flex-start" ${c.busy ? "disabled" : ""}>${c.busy ? '<span class="spin"></span>' : "✨"} Suggest bios</button>
+        ${c.bios.length ? `<div class="col" style="gap:6px">${c.bios.map((x, i) => `<button class="opt small" data-act="cwBioPick" data-id="${i}">${esc(x)}</button>`).join("")}</div>` : ""}</div>
+      <div class="row"><button class="btn ghost" data-act="cwBack">Back</button><button class="btn accent grow" data-act="cwGen">Build world</button></div>
+    </div>`;
+  } else if (c.step === 3) {
+    b = `<div class="empty"><div class="spin" style="margin:0 auto 14px;width:30px;height:30px"></div><b>Building your world, its cast and the opening scene</b><div class="small" style="margin-top:6px">Free models can take 20–90 seconds.</div></div>`;
+  } else {
+    const g = c.gen;
+    b = `<div class="col gut" style="gap:12px">
+      <div class="card"><div style="font-size:26px">${esc(g.emoji)}</div><b style="font-size:17px">${esc(g.world_name)}</b><div class="small muted" style="margin-top:4px">${esc(g.description)}</div></div>
+      <div class="small muted">Who follows you first? You can unlock the rest by clearing milestones.</div>
+      ${g.chars.map((ch, i) => `<button class="world" data-act="cwPick" data-id="${i}" style="text-align:left;${c.pick === i ? "border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)" : ""}">
+        ${avatar(ch.av, ch.id)}<div class="grow"><b>${esc(ch.name)}</b> <span class="small muted">@${esc(ch.handle)}</span><div class="small muted">${esc(ch.bio)}</div></div></button>`).join("")}
+      <button class="btn accent block" data-act="cwStart" ${c.pick == null ? "disabled" : ""}>Enter the world</button>
+    </div>`;
+  }
+  return head(title, `<span class="tiny muted num">${Math.min(c.step, 4)}/4</span>`) + `<div class="sh-body">${b}</div>`;
+}
+const worldReq = c => c.preset === -1 ? c.custom : PRESETS[c.preset][1] + " — " + PRESETS[c.preset][2];
+async function cwBioAI() {
+  const c = S.cw; c.busy = true; refreshSheet();
+  try {
+    const r = await ai(`Suggest 3 short, fun social-media bios (max 120 characters each) for a role-play persona.
+World: ${worldReq(c) || "-"}
+Persona name: ${c.name || "-"}, vibe: ${c.vibe}. Notes: ${c.bio || "-"}
+${LANG_RULE}
+Reply with ONLY JSON: {"bios":["...","...","..."]}`);
+    c.bios = (r.bios || []).slice(0, 3).map(String);
+  } catch (e) { failed(e); }
+  c.busy = false; refreshSheet();
+}
+async function cwGenerate() {
+  const c = S.cw;
+  if (!c.name.trim()) return toast("Add a display name first");
+  if (c.preset === -1 && !c.custom.trim()) { c.step = 1; refreshSheet(); return toast("Describe the world or fandom first"); }
+  if (!S.G.apiKey) return openApi("Add your OpenRouter key to build a world.");
+  c.handle = (c.handle || c.name).replace(/^@/, "").replace(/\s+/g, "").slice(0, 24) || "me" + rnd(100, 999);
+  c.step = 3; refreshSheet();
+  const libs = S.G.library.filter(l => c.libPick.includes(l.id));
+  const prompt = `Design a role-play social-media simulation world (a Twitter/X-style timeline where every other account is an AI character).
+WORLD REQUEST: ${worldReq(c)}
+If this names an existing fandom, series, game or book, use its real characters, places and lore faithfully. Otherwise invent an original world.
+DRAMA LEVEL (1-5): ${c.madness} = ${MADNESS[c.madness]}
+PLAYER PERSONA: ${c.name} (@${c.handle}), vibe: ${c.vibe}, looks: ${c.look || "-"}, bio/notes: ${c.bio || "-"}
+${libs.length ? "ALSO PLACE THESE PLAYER-MADE CHARACTERS IN THE WORLD (do not include them in your characters list; just weave them into the setting):\n" + libs.map(l => `- ${l.name}: ${l.desc.slice(0, 300)}`).join("\n") : ""}
+${LANG_RULE}
+Design the world around the player as the main character.
+${IMG_RULE}
+Reply with ONLY this JSON:
+{"world_name":"short name","emoji":"one emoji","description":"2-3 sentences about the setting and the player's place in it",
+"skills":[{"name":"skill name (2-3 words)","desc":"what it helps with"}],
+"goal":"the player's main goal in one sentence",
+"milestones":["9 ordered story milestones toward the goal, short"],
+"characters":[{"name":"","handle":"lowercase_handle_no_at","bio":"public bio, max 80 chars","desc":"personality, voice, posting style, secrets, how they see the player: 3-4 sentences","look":"appearance in under 20 words (hair, style, signature items), no names","emoji":"one emoji","followers":0,"greeting":"the first DM they'd send the player if they became the player's first follower"}],
+"news":[{"name":"","handle":"","bio":"","emoji":""}],
+"opening_posts":[{"handle":"handle of a character or news account","text":"post that sets the scene","image":"photo description or null"}],
+"first_event":{"title":"","desc":"2-3 sentences","choices":["","",""]},
+"trends":["#...","#...","#...","#..."]}
+Counts: skills exactly 3, milestones exactly 9, characters exactly 9 (main cast with varied roles: allies, rivals, love interests, chaos agents), news exactly 2 (a news outlet and a gossip/fan account), opening_posts 4-5 (at least 2 with photos). Follower counts realistic for each character's fame.`;
+  try {
+    const r = await ai(prompt, "big");
+    const chars = (r.characters || []).filter(x => x && x.name).slice(0, 10).map((x, i) => ({
+      id: uid("c"), name: String(x.name).slice(0, 40), handle: String(x.handle || x.name).replace(/^@/, "").replace(/\s+/g, "_").slice(0, 24),
+      bio: String(x.bio || "").slice(0, 160), desc: String(x.desc || "").slice(0, 1500), look: String(x.look || "").slice(0, 200),
+      av: { e: String(x.emoji || "🙂").slice(0, 4), c: (i * 3 + 1) % COLORS.length, st: AV_STYLES[i % AV_STYLES.length], sd: uid() },
+      followers: Math.max(10, Math.round(num(x.followers)) || rnd(500, 30000)), greeting: String(x.greeting || ""), unlocked: false, followsMe: false, iFollow: false, kind: "char", rel: 0, chem: ""
+    }));
+    for (const l of libs) chars.push({ id: uid("c"), lib: l.id, name: l.name, handle: l.handle, bio: l.bio, desc: l.desc, look: l.look || "", av: l.av, followers: rnd(800, 40000), greeting: "", unlocked: false, followsMe: false, iFollow: false, kind: "char", rel: 5, chem: "" });
+    if (chars.length < 2) throw { code: "badjson" };
+    c.gen = { world_name: String(r.world_name || worldReq(c)).slice(0, 50), emoji: String(r.emoji || "🌍").slice(0, 4), description: String(r.description || ""), raw: r, chars };
+    c.step = 4; c.pick = null;
+  } catch (e) { c.step = 2; failed(e); }
+  refreshSheet();
+}
+function cwStart() {
+  const c = S.cw, g = c.gen, r = g.raw;
+  const W = {
+    id: uid("w"), name: g.world_name, emoji: g.emoji, desc: g.description, fandom: c.preset === -1 ? c.custom : PRESETS[c.preset][1],
+    madness: c.madness, muteNews: false, imgStyle: c.imgStyle, day: 1, createdAt: Date.now(), savedAt: 0,
+    me: { name: c.name.trim(), handle: c.handle, bio: c.bio.trim(), look: c.look.trim(), vibe: c.vibe, av: c.av, followers: rnd(80, 260), humor: 10, aura: 10, xp: 0, level: 1, sp: 1, unlocks: 0,
+      skills: (r.skills || []).slice(0, 3).map(s => ({ name: String(s.name || "Skill"), desc: String(s.desc || ""), lv: 1 })), goal: String(r.goal || ""),
+      milestones: (r.milestones || []).slice(0, 9).map(t => ({ t: String(t), done: false })), boosts: { viral: 1, clout: 1 } },
+    chars: g.chars, posts: [], dms: {}, dmRead: {}, dmMeta: {}, stories: [], notifs: [], log: [], events: [], invites: [], trends: (r.trends || []).slice(0, 5).map(String), act: null
+  };
+  while (W.me.skills.length < 3) W.me.skills.push({ name: ["Confidence", "Wit", "Charm"][W.me.skills.length], desc: "", lv: 1 });
+  while (W.me.milestones.length < 9) W.me.milestones.push({ t: "Grow your reputation", done: false });
+  for (const n of (r.news || []).slice(0, 2)) W.chars.push({ id: uid("c"), name: String(n.name || "News"), handle: String(n.handle || "news").replace(/^@/, "").replace(/\s+/g, "_"), bio: String(n.bio || ""), desc: String(n.bio || "news account"), av: { e: String(n.emoji || "📰"), c: 7, st: "initials", sd: String(n.name || "News") }, followers: rnd(20000, 300000), unlocked: false, kind: "news", rel: 0, chem: "" });
+  const first = W.chars[c.pick];
+  first.unlocked = first.followsMe = first.iFollow = true; first.rel = 15;
+  S.W = W;
+  addPosts(r.opening_posts);
+  if (first.greeting) pushDM(first.id, "them", first.greeting);
+  if (r.first_event && r.first_event.title) W.events.push({ id: uid("e"), title: String(r.first_event.title), desc: String(r.first_event.desc || ""), choices: (r.first_event.choices || []).slice(0, 3).map(String), day: 1, done: false });
+  notify("follow", `${first.name} followed you`);
+  remember(`${W.me.name} arrived in ${W.name} and ${first.name} became their first follower`);
+  S.G.worlds.push({ id: W.id, name: W.name, emoji: W.emoji, day: 1, followers: W.me.followers, me: W.me.name, last: Date.now() });
+  S.snaps = []; S.view = { screen: "world", tab: "feed", post: null, dm: null };
+  saveWorld(); flushWorld(); closeLayer(); render();
+  toast(`Welcome to ${W.name}`);
+}
+
+/* ---------- shop (gems are earned in-game, never bought) ---------- */
+function sheetShop() {
+  const G = S.G, W = S.W;
+  const item = (icon, t, d, cost, act, dis) => `<div class="row card" style="padding:12px"><div style="font-size:26px;width:36px;text-align:center">${icon}</div><div class="grow"><b>${t}</b><div class="small muted">${d}</div></div><button class="btn sm ${dis ? "soft" : "accent"}" data-act="${act}" ${dis ? "disabled" : ""}>${cost}</button></div>`;
+  return head("Shop") + `<div class="sh-body"><div class="col gut" style="gap:10px">
+    <div class="row wrap"><span class="pill gem num">${ic("gem")}${G.gems} gems</span>${W ? `<span class="pill num">🚀 ${W.me.boosts.viral}</span><span class="pill num">📣 ${W.me.boosts.clout}</span>` : ""}</div>
+    ${item("🚀", "Viral boost", W ? "Your next boosted post is guaranteed to blow up (this world)" : "Open a world to buy boosts", "25 💎", "buyViral", G.gems < 25 || !W)}
+    ${item("📣", "Clout boost", W ? "A boosted post gains double followers (this world)" : "Open a world to buy boosts", "20 💎", "buyClout", G.gems < 20 || !W)}
+    ${item("🎟️", "Extra unlock", W ? "Unlock one more character right away (this world)" : "Open a world first", "60 💎", "buyUnlock", G.gems < 60 || !W)}
+    <div class="small muted">Gems come free from daily check-ins, level-ups, milestones and achievements. There is no real-money anything here.</div>
+  </div></div>`;
+}
+
+/* ---------- settings ---------- */
+function sheetSettings() {
+  const G = S.G, st = S.setState || (S.setState = {});
+  return head("Settings") + `<div class="sh-body"><div class="col gut" style="gap:16px">
+    ${CLOUD.state !== "off" ? `<button class="btn soft" data-act="account">${ic("user")} Account & cloud save</button><div class="tiny muted" style="margin-top:-10px">${esc(cloudLabel())}</div>` : ""}
+    ${canInstall() ? `<button class="btn soft" data-act="install">📲 Install as an app</button>` : ""}
+    <button class="btn soft" data-act="api">${ic("key")} API & usage (OpenRouter)</button>
+    <div class="field"><label>Theme</label>${chips([["", "System"], ["light", "Light"], ["dark", "Dark"]], G.theme, "setTheme")}</div>
+    <div class="field"><label>Photos in posts & stories</label>${chips([["ai", "AI photos"], ["stock", "Stock photos"], ["off", "Off"]], G.imgMode, "setImg")}
+      <div class="tiny muted">AI photos are drawn free by Pollinations to match each post. The free service is rate-limited, so they appear one by one. Stock photos load instantly but are random.</div></div>
+    <label class="row card" style="padding:12px;cursor:pointer"><div class="grow"><b>Illustrated avatars</b><div class="small muted">Profile pictures from DiceBear (free). Off shows emoji.</div></div><input type="checkbox" id="avTog" data-act="avTog" ${G.avatars !== false ? "checked" : ""} style="width:22px;height:22px;accent-color:var(--accent)"></label>
+    <button class="btn soft" data-act="library">🧬 My characters (${G.library.length})</button>
+    <div class="card col" style="gap:8px"><b>Backup</b><div class="small muted">${CLOUD.user ? "Your save is in the cloud and on this device. Export makes an extra copy you keep yourself." : "Everything is saved in this browser. Sign in for cloud save, or export to move your save by hand."}</div>
+      <div class="row wrap"><button class="btn sm soft" data-act="exportSave">Export save</button><button class="btn sm soft" data-act="importOpen">Import save</button></div>
+      ${st.export ? `<textarea class="in" id="exportBox" readonly style="min-height:120px;font-size:12px">${esc(st.export)}</textarea><button class="btn sm" data-act="copyExport">Copy</button>` : ""}
+      ${st.importing ? `<textarea class="in" id="importBox" style="min-height:120px;font-size:12px" placeholder="Paste an exported save here"></textarea><button class="btn sm accent" data-act="doImport">Import</button>` : ""}
+    </div>
+    <div class="card col" style="gap:8px"><b>Start over</b><div class="small muted">Deletes every world, gem and achievement${CLOUD.user ? ", here and in your cloud save" : " in this browser"} (your API key stays).</div>
+      ${st.confirmReset ? `<div class="row"><button class="btn sm" style="background:var(--bad);color:#fff" data-act="doReset">Yes, delete everything</button><button class="btn sm ghost" data-act="cancelReset">Cancel</button></div>` : `<button class="btn sm ghost" data-act="askReset" style="align-self:flex-start">Delete all data</button>`}</div>
+    <div class="tiny muted">Main Character · an AI social-media simulator. Every character and story here is fiction.</div>
+  </div></div>`;
+}
+
+/* ---------- account & cloud save ---------- */
+function sheetAccount() {
+  const a = S.acct || (S.acct = { mode: "in" });
+  const msg = `${a.err ? `<div class="err">${esc(a.err)}</div>` : ""}${a.ok ? `<div class="okmsg">${esc(a.ok)}</div>` : ""}`;
+  const busy = a.busy ? "disabled" : "";
+  let body;
+  if (CLOUD.state === "off") {
+    body = `<div class="notice">Cloud save isn't set up for this copy of the app, so your game is saved on this device only. To turn it on, follow the setup steps in README.md.</div>`;
+  } else if (a.mode === "newpass") {
+    body = `<div class="field"><label for="acNew">New password</label><input class="in" id="acNew" type="password" autocomplete="new-password" minlength="6" data-ac="newPass" value="${esc(a.newPass || "")}"></div>
+      ${msg}<button class="btn accent" data-act="acNewPass" ${busy}>Save new password</button>`;
+  } else if (CLOUD.user) {
+    const q = CLOUD.q, pending = q.worlds.length + q.deleted.length + (q.meta ? 1 : 0);
+    body = `<div class="card col" style="gap:6px"><div class="tiny muted">Signed in as</div><b class="ell">${esc(CLOUD.user.email || "your account")}</b>
+        <div class="row small" style="gap:8px"><span class="cdot ${CLOUD.state}" style="position:static;border:0"></span><span class="grow">${esc(cloudLabel())}</span></div>
+        ${pending ? `<div class="tiny muted">${pending} change${pending === 1 ? "" : "s"} waiting to upload</div>` : ""}</div>
+      <div class="small muted">Your worlds, gems, achievements and characters sync to every device you sign in on. Your OpenRouter key stays on each device and is never uploaded.</div>
+      <button class="btn soft" data-act="acSync" ${CLOUD.state === "syncing" ? "disabled" : ""}>Sync now</button>
+      ${a.unsynced ? `<div class="notice">Some changes haven't reached the cloud yet (you may be offline). Signing out now loses them on this device.</div>
+        <div class="row"><button class="btn sm" style="background:var(--bad);color:#fff" data-act="acSignOutForce">Sign out anyway</button><button class="btn sm ghost" data-act="acStay">Stay signed in</button></div>`
+        : `<button class="btn ghost" data-act="acSignOut" ${busy}>Sign out</button><div class="tiny muted">Signing out removes the game from this device. It stays safe in your cloud save.</div>`}`;
+  } else {
+    const up = a.mode === "up", forgot = a.mode === "forgot";
+    body = `<div class="small muted">Sign in to keep your worlds in the cloud and continue on any phone or computer. Without an account the game is saved on this device only.</div>
+      ${forgot ? "" : chips([["in", "Sign in"], ["up", "Create account"]], a.mode, "acMode")}
+      <div class="field"><label for="acEmail">Email</label><input class="in" id="acEmail" type="email" autocomplete="email" inputmode="email" data-ac="email" value="${esc(a.email || "")}"></div>
+      ${forgot ? "" : `<div class="field"><label for="acPass">Password</label><input class="in" id="acPass" type="password" autocomplete="${up ? "new-password" : "current-password"}" data-ac="pass" value="${esc(a.pass || "")}">${up ? `<div class="tiny muted">At least 6 characters.</div>` : ""}</div>`}
+      ${msg}
+      ${forgot ? `<button class="btn accent" data-act="acForgot" ${busy}>Email me a reset link</button><button class="linkbtn" data-act="acMode" data-id="in">Back to sign in</button>`
+        : `<button class="btn accent" data-act="acSubmit" ${busy}>${a.busy ? "Please wait…" : up ? "Create account" : "Sign in"}</button>
+      ${CFG.google ? `<button class="btn ghost" data-act="acGoogle" ${busy}>Continue with Google</button>` : ""}
+      ${up ? "" : `<button class="linkbtn" data-act="acMode" data-id="forgot">Forgot password?</button>`}`}`;
+  }
+  return head("Account") + `<div class="sh-body"><div class="col gut" style="gap:14px">${body}</div></div>`;
+}
+async function acRun(fn) {
+  const a = S.acct; a.busy = true; a.err = a.ok = ""; refreshSheet();
+  try { await fn(a); } catch (e) { a.err = (e && e.message) || "Something went wrong. Check your connection and try again."; }
+  a.busy = false; refreshSheet();
+}
+async function signOut(force) {
+  const a = S.acct || (S.acct = { mode: "in" });
+  if (isBusy()) return toast("Wait for the AI to finish first");
+  flushWorld(); await cloudPush();
+  if (!force && !qEmpty()) { a.unsynced = true; return refreshSheet(); }
+  a.busy = true; refreshSheet();
+  await CLOUD.sb.auth.signOut({ scope: "local" }).catch(() => { });
+  const theme = S.G.theme;
+  CLOUD.applying = true; wipeLocal();
+  S.G = Object.assign(newGlobal(), { theme, streak: { n: 1, last: todayKey() } });
+  seedSample(); LS.set("mc_meta", S.G); CLOUD.applying = false;
+  CLOUD.user = null; CLOUD.pulled = 0; S.acct = { mode: "in" };
+  setCloud("out"); closeLayer(); applyTheme(); render(); toast("Signed out. This device's copy was removed.");
+}
+
+/* ---------- install as an app (PWA) ---------- */
+let installEvt = null;
+addEventListener("beforeinstallprompt", e => { e.preventDefault(); installEvt = e; if (S.G) render(); });
+addEventListener("appinstalled", () => { installEvt = null; toast("Installed! Open Main Character from your home screen."); });
+const isStandalone = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const canInstall = () => !isStandalone() && /^https?:$/.test(location.protocol) && (!!installEvt || isIOS());
+function sheetInstall() {
+  return head("Install the app") + `<div class="sh-body"><div class="col gut" style="gap:12px">
+    <div class="small">Add Main Character to your home screen to open it full screen, like a normal app:</div>
+    <ol class="small" style="margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px">
+      <li>Open this page in <b>Safari</b>.</li><li>Tap the <b>Share</b> button (square with an arrow).</li>
+      <li>Choose <b>Add to Home Screen</b>, then <b>Add</b>.</li></ol>
+  </div></div>`;
+}
+function registerSW() {
+  if (!("serviceWorker" in navigator) || !(location.protocol === "https:" || ["localhost", "127.0.0.1"].includes(location.hostname))) return;
+  navigator.serviceWorker.register("sw.js").catch(() => { });
+}
+
+/* ---------- world settings ---------- */
+function sheetWorldSettings() {
+  const W = S.W, st = S.wsState || (S.wsState = {});
+  return head("World settings") + `<div class="sh-body"><div class="col gut" style="gap:14px">
+    <div class="field"><label for="wsName">World name</label><input class="in" id="wsName" maxlength="50" value="${esc(W.name)}"></div>
+    <div class="field"><label for="wsDesc">World description (the AI uses this as context)</label><textarea class="in" id="wsDesc" maxlength="1500">${esc(W.desc)}</textarea></div>
+    <div class="field"><label for="wsMad">Madness: <span id="wsMadL">${W.madness} · ${esc(MADNESS[W.madness])}</span></label><input type="range" id="wsMad" min="1" max="5" value="${W.madness}"></div>
+    <div class="field"><label for="wsImg">Photo style</label><select class="in" id="wsImg">${[["photo", "Realistic photos"], ["anime", "Anime"], ["art", "Digital art"]].map(([k, l]) => `<option value="${k}" ${(W.imgStyle || "photo") === k ? "selected" : ""}>${l}</option>`).join("")}</select></div>
+    <label class="row card" style="padding:12px;cursor:pointer"><div class="grow"><b>Mute news accounts</b><div class="small muted">Stop news and tea pages from posting about you</div></div><input type="checkbox" id="wsMute" ${W.muteNews ? "checked" : ""} style="width:22px;height:22px;accent-color:var(--accent)"></label>
+    <button class="btn accent" data-act="wsSave">Save</button>
+    <div class="card col" style="gap:8px"><b>Delete this world</b>
+      ${st.confirm ? `<div class="row"><button class="btn sm" style="background:var(--bad);color:#fff" data-act="wsDelete">Yes, delete it</button><button class="btn sm ghost" data-act="wsCancel">Cancel</button></div>` : `<button class="btn sm ghost" data-act="wsAskDelete" style="align-self:flex-start">Delete ${esc(W.name)}</button>`}</div>
+  </div></div>`;
+}
+
+/* ---------- edit persona / goal ---------- */
+function sheetEditMe() {
+  const me = S.W.me, e = S.editMe || (S.editMe = { av: { st: "notionists", sd: uid(), ...me.av } });
+  return head("Edit profile") + `<div class="sh-body"><div class="col gut" style="gap:14px">
+    ${avPicker(e.av, "me", "em")}
+    <div class="field"><label for="emName">Display name</label><input class="in" id="emName" maxlength="40" value="${esc(e.name ?? me.name)}"></div>
+    <div class="field"><label for="emHandle">Username (@)</label><input class="in" id="emHandle" maxlength="24" value="${esc(e.handle ?? me.handle)}"></div>
+    <div class="field"><label for="emLook">How you look (for photos)</label><input class="in" id="emLook" maxlength="200" value="${esc(e.look ?? me.look ?? "")}"></div>
+    <div class="field"><label for="emBio">Bio</label><textarea class="in" id="emBio" maxlength="1500">${esc(e.bio ?? me.bio)}</textarea></div>
+    <button class="btn accent" data-act="emSave">Save</button>
+  </div></div>`;
+}
+function sheetGoal() {
+  return head("Edit goal") + `<div class="sh-body"><div class="col gut" style="gap:12px">
+    <div class="small muted">The AI steers the story toward this goal.</div>
+    <textarea class="in" id="goalIn" maxlength="300">${esc(S.W.me.goal)}</textarea>
+    <button class="btn accent" data-act="goalSave">Save</button></div></div>`;
+}
+
+/* ---------- character profile ---------- */
+function sheetChar() {
+  const W = S.W, c = W.chars.find(x => x.id === S.charView); if (!c) return head("");
+  const posts = W.posts.filter(p => p.a === c.id).slice(0, 12), canTalk = c.unlocked && c.kind !== "news";
+  return head(esc(c.name)) + `<div class="sh-body">
+    <div class="gut col" style="gap:10px;padding-bottom:14px">
+      <div class="row">${avatar(c.av, c.id, "lg", c.kind === "news" ? "news" : "")}<div class="grow"><div class="row" style="gap:5px"><h2 style="font-size:20px">${esc(c.name)}</h2>${num(c.followers) >= 10000 || c.kind === "news" ? badge() : ""}</div><div class="muted">@${esc(c.handle)}</div>
+      <div class="small num" style="margin-top:4px"><b>${fmt(c.followers)}</b> <span class="muted">followers</span>${c.followsMe ? ' · <span class="muted">Follows you</span>' : ""}</div></div></div>
+      ${c.bio ? `<div style="white-space:pre-wrap">${esc(c.bio)}</div>` : ""}
+      ${c.kind !== "news" ? `<div class="card col" style="gap:8px"><div class="row"><b class="grow">Relationship</b><span class="num" style="color:${relColor(c.rel)};font-weight:700">${Math.round(c.rel)}</span></div>${relBar(c.rel)}
+        <div class="small muted">Dynamic: ${esc(c.chem || "not defined yet")}</div>
+        ${canTalk ? `<div class="row wrap" style="gap:6px">${CHEMS.map(x => `<button class="chip" style="padding:5px 10px;font-size:13px" data-act="setChem" data-id="${esc(x)}" aria-pressed="${c.chem === x}">${esc(x)}</button>`).join("")}</div>` : ""}</div>` : ""}
+      ${canTalk ? `<div class="row"><button class="btn accent grow" data-act="dmFromProfile" data-id="${esc(c.id)}">Message</button><button class="btn ghost grow" data-act="actFromProfile" data-id="${esc(c.id)}">Invite to activity</button></div>` : c.kind === "news" ? "" : `<div class="notice">Not in your circle yet. Unlock them from your profile.</div>`}
+    </div>
+    ${posts.map(postHTML).join("") || `<div class="empty small">No posts yet</div>`}
+  </div>`;
+}
+
+/* ---------- my characters library ---------- */
+function sheetLibrary() {
+  const G = S.G, f = S.libForm;
+  if (f) {
+    return head(f.id ? "Edit character" : "New character") + `<div class="sh-body"><div class="col gut" style="gap:12px">
+      ${avPicker(f.av, "lib", "lf")}
+      <div class="field"><label for="lfName">Name</label><input class="in" id="lfName" data-lf="name" maxlength="40" value="${esc(f.name)}"></div>
+      <div class="field"><label for="lfHandle">Username (@)</label><input class="in" id="lfHandle" data-lf="handle" maxlength="24" value="${esc(f.handle)}"></div>
+      <div class="field"><label for="lfBio">Short bio</label><input class="in" id="lfBio" data-lf="bio" maxlength="160" value="${esc(f.bio)}"></div>
+      <div class="field"><label for="lfLook">Looks (for photos)</label><input class="in" id="lfLook" data-lf="look" maxlength="200" value="${esc(f.look || "")}"></div>
+      <div class="field"><label for="lfDesc">Character details: personality, posting style, relationships <span class="num" id="lfCount">${f.desc.length}/1500</span></label><textarea class="in" id="lfDesc" data-lf="desc" maxlength="1500" style="min-height:140px">${esc(f.desc)}</textarea></div>
+      <button class="btn soft sm" data-act="lfAI" style="align-self:flex-start" ${f.busy ? "disabled" : ""}>${f.busy ? '<span class="spin"></span>' : "✨"} Write the details for me</button>
+      <div class="row"><button class="btn ghost" data-act="lfCancel">Cancel</button><button class="btn accent grow" data-act="lfSave">Save</button></div>
+    </div></div>`;
+  }
+  return head("My characters") + `<div class="sh-body"><div class="col gut" style="gap:10px">
+    <div class="small muted">Your characters work in every world. Add them when building a new world, or into a world you're playing with an unlock.</div>
+    <button class="btn accent" data-act="lfNew">${ic("plus")} New character</button>
+    ${G.library.map(l => `<div class="row card" style="padding:12px">${avatar(l.av, l.id, "sm")}<div class="grow"><b>${esc(l.name)}</b> <span class="small muted">@${esc(l.handle)}</span><div class="small muted ell">${esc(l.bio)}</div></div>
+      ${S.libAdd ? `<button class="btn sm accent" data-act="libAddToWorld" data-id="${esc(l.id)}">Add</button>` : `<button class="iconbtn" data-act="lfEdit" data-id="${esc(l.id)}" aria-label="Edit">${ic("edit")}</button><button class="iconbtn" data-act="lfDel" data-id="${esc(l.id)}" aria-label="Delete">${ic("trash")}</button>`}</div>`).join("") || `<div class="empty small">No characters yet</div>`}
+  </div></div>`;
+}
+async function lfAI() {
+  const f = S.libForm; if (!f.name.trim()) return toast("Add a name first");
+  f.busy = true; refreshSheet();
+  try {
+    const r = await ai(`Write a role-play character card for an AI social-media simulation.
+Name: ${f.name}. Handle: @${f.handle || "-"}. Notes from the user: ${f.desc || f.bio || "-"}
+${LANG_RULE}
+Reply with ONLY JSON: {"bio":"public social bio, max 80 chars","look":"appearance in under 20 words","desc":"personality, voice, posting style, quirks, secrets: 4-6 sentences, under 1200 characters"}`);
+    if (r.bio) f.bio = String(r.bio).slice(0, 160); if (r.desc) f.desc = String(r.desc).slice(0, 1500); if (r.look && !f.look) f.look = String(r.look).slice(0, 200);
+  } catch (e) { failed(e); }
+  f.busy = false; refreshSheet();
+}
+
+/* ---------- my story ---------- */
+function sheetMyStory() {
+  const st = S.storyForm || (S.storyForm = { bg: 0, t: "", img: "" });
+  return head("New story") + `<div class="sh-body"><div class="col gut" style="gap:12px">
+    <div style="background:${STORY_BG[st.bg]};border-radius:16px;min-height:200px;display:grid;place-items:center;padding:20px">
+      <textarea id="storyIn" data-sf="t" maxlength="200" placeholder="Type something…" style="background:transparent;border:0;outline:none;color:#fff;font-family:var(--font-display);font-size:22px;text-align:center;width:100%;resize:none;min-height:120px">${esc(st.t)}</textarea></div>
+    <div class="row wrap" style="gap:8px">${STORY_BG.map((g, i) => `<button data-act="sfBg" data-id="${i}" aria-label="Background ${i + 1}" style="width:34px;height:34px;border-radius:50%;background:${g};${st.bg === i ? "box-shadow:0 0 0 2px var(--surface),0 0 0 4px var(--accent)" : ""}"></button>`).join("")}</div>
+    <div class="field"><label for="storyImg">Photo (optional): describe it</label><input class="in" id="storyImg" data-sf="img" maxlength="200" value="${esc(st.img)}" placeholder="e.g. sunset from the rooftop, city lights below"></div>
+    <div class="tiny muted">Characters may reply to your story in DMs.</div>
+    <button class="btn accent" data-act="sfPost" ${isBusy() ? "disabled" : ""}>Share story</button>
+  </div></div>`;
+}
+async function postStory() {
+  const W = S.W, st = S.storyForm; if (!st.t.trim() && !st.img.trim()) return toast("Write something or describe a photo first");
+  if (guard()) return;
+  const text = st.t.trim(), img = mkImg(st.img);
+  W.stories.push({ id: uid("s"), a: "me", t: text, img, bg: st.bg, day: W.day, ts: Date.now(), seen: true });
+  S.storyForm = null; closeLayer(); setBusy("People are viewing your story…"); render();
+  try {
+    const r = await ai(`${ctx(W, { posts: 4 })}
+
+The player just posted an Instagram-style STORY: "${text}"${img ? ` (photo: ${img.d})` : ""}
+Which listed characters (only ones in the player's circle) would reply privately, and what would they send?
+Reply with ONLY JSON: {"viewers":0,"reactions":[{"handle":"@listed character","text":"their DM reply to the story"}],"memory":"one sentence or empty"}
+viewers: a realistic count for ${W.me.followers} followers. reactions: 0-2.`);
+    for (const x of (r.reactions || []).slice(0, 2)) { const c = findCharByHandle(W, x && x.handle); if (c && c.unlocked && c.kind !== "news" && x.text) { pushDM(c.id, "sys", `Replied to your story: “${(text || img.d).slice(0, 60)}”`); pushDM(c.id, "them", String(x.text)); notify("dm", `${c.name} replied to your story`, { dm: c.id }); } }
+    if (r.memory) remember(r.memory);
+    toast(`${fmt(num(r.viewers) || rnd(20, 200))} people viewed your story`);
+    addXP(10); saveWorld();
+  } catch (e) { saveWorld(); failed(e); }
+  finally { setBusy(null); render(); }
+}
+
+/* ---------- story viewer ---------- */
+function openStories(startA) {
+  const W = S.W, byA = {}; for (const s of W.stories) (byA[s.a] = byA[s.a] || []).push(s);
+  const order = [startA, ...Object.keys(byA).filter(a => a !== startA && a !== "me" && !byA[a].every(s => s.seen))].filter(a => byA[a]);
+  S.sv = { order, byA, ai: 0, si: 0 }; showStory();
+}
+function showStory() {
+  const sv = S.sv;
+  if (!sv || sv.ai >= sv.order.length) { S.sv = null; layer.innerHTML = ""; saveWorld(); render(); return; }
+  const a = sv.order[sv.ai], list = sv.byA[a], s = list[sv.si]; s.seen = true;
+  const A = authorInfo(S.W, a), src = s.img ? imgSrc(s.img, 720, 1280) : null;
+  const ch = S.W.chars.find(c => c.id === a);
+  layer.innerHTML = `<div class="sv"><div class="frame">
+    <div class="bars">${list.map((x, i) => `<i><b style="width:${i < sv.si ? 100 : 0}%" ${i === sv.si ? 'id="svBar"' : ""}></b></i>`).join("")}</div>
+    <div class="row" style="padding:4px 14px 6px">${avatar(A.av, A.key, "xs")}<b>${esc(A.name)}</b><span style="opacity:.7;font-size:13px">day ${s.day}</span><span class="grow"></span><button class="iconbtn" style="color:#fff" data-act="svClose" aria-label="Close">${ic("x")}</button></div>
+    <div class="card-s ${src ? "photo" : ""}" style="background:${STORY_BG[s.bg % STORY_BG.length]}" ${s.img && !src ? `data-ikbg="${s.img.s}"` : ""}>${src ? `<img class="sv-photo" src="${esc(src)}" alt="">` : ""}<span>${esc(s.t || (s.img && !src ? "📷 " + s.img.d : ""))}</span>
+      <button class="nav l" data-act="svPrev" aria-label="Previous"></button><button class="nav r" data-act="svNext" aria-label="Next"></button></div>
+    ${a !== "me" && ch && ch.unlocked && ch.kind !== "news" ? `<div class="row" style="padding:8px 12px"><input class="in" id="svReply" placeholder="Reply to ${esc(A.name)}…" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.3);color:#fff"><button class="send" data-act="svSend" data-id="${esc(a)}" aria-label="Send">${ic("send", 2.4)}</button></div>` : '<div style="height:12px"></div>'}
+  </div></div>`;
+  const bar = $("#svBar"); let start = performance.now();
+  const tick = t => {
+    if (!S.sv || !bar.isConnected) return;
+    if (document.activeElement && document.activeElement.id === "svReply") { start = t - (parseFloat(bar.style.width) || 0) * 60; return requestAnimationFrame(tick); }
+    const p = Math.min(100, (t - start) / 60); bar.style.width = p + "%";
+    if (p >= 100) svStep(1); else requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+function svStep(d) {
+  const sv = S.sv; if (!sv) return;
+  sv.si += d;
+  if (sv.si < 0) { sv.ai = Math.max(0, sv.ai - 1); sv.si = 0; }
+  else if (sv.si >= sv.byA[sv.order[sv.ai]].length) { sv.ai++; sv.si = 0; }
+  showStory();
+}
+
+/* ---------- activity scene ---------- */
+function openActivity() { openSheet(sheetActivity, true); }
+function renderActivity() { if (S.sheet && S.sheet.fn === sheetActivity) { refreshSheet(); const b = layer.querySelector(".sh-body"); if (b) b.scrollTop = b.scrollHeight; } else render(); }
+function sheetActivity() {
+  const W = S.W, A = W.act; if (!A) return head("Activity") + `<div class="sh-body"></div>`;
+  const c = W.chars.find(x => x.id === A.cid) || { name: "?", av: {}, rel: 0 };
+  return `<div class="sh-head gut"><button class="iconbtn" data-act="close" aria-label="Close">${ic("x")}</button>${avatar(c.av, c.id, "xs")}
+      <div class="grow" style="line-height:1.2"><b class="ell" style="display:block">${esc(A.title)}</b><span class="tiny muted">with ${esc(c.name)} · beat ${A.turns}/6 · relationship ${Math.round(c.rel)}</span></div>
+      <button class="iconbtn" data-act="actUndo" aria-label="Undo move" title="Undo move" ${A.hist.length && !A.busy ? "" : "disabled style='opacity:.35'"}>${ic("undo")}</button></div>
+    <div class="sh-body"><div class="scene gut">
+      ${A.lines.map(l => l.k === "narr" ? `<div class="narr">${esc(l.t)}</div>` : l.k === "char" ? `<div class="line"><b>${esc(c.name)}:</b> ${esc(l.t)}</div>` : `<div class="line" style="align-self:flex-end;background:var(--accent-soft);padding:8px 12px;border-radius:14px;max-width:85%"><b>You:</b> ${esc(l.t)}</div>`).join("")}
+      ${A.busy ? `<div class="thinking"><span class="spin"></span>${A.lines.length ? "Writing what happens next…" : "Setting the scene…"}</div>` : ""}
+      ${A.done ? `<div class="card" style="text-align:center"><div style="font-size:28px">🎬</div><b>Scene complete</b><div class="small muted">+40 XP · this moment is now part of the story</div><button class="btn accent sm" style="margin-top:10px" data-act="actClose">Close</button></div>` : ""}
+    </div></div>
+    ${A.done || A.busy ? "" : `<div class="gut" style="padding-block:10px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:8px">
+      ${A.options.map(o => `<button class="opt small" data-act="actOpt" data-choice="${esc(o)}">${esc(o)}</button>`).join("")}
+      <div class="row"><label class="sr" for="actTurn">Your move</label><input class="in" id="actTurn" placeholder="Or write what you do or say" maxlength="300"><button class="send" data-act="actSend" aria-label="Send">${ic("send", 2.4)}</button></div></div>`}`;
+}
+/* ================= actions (click delegation) ================= */
+const val = id => { const el = document.getElementById(id); return el ? el.value : ""; };
+function keepEditMe() { const e = S.editMe; e.name = val("emName"); e.handle = val("emHandle"); e.bio = val("emBio"); e.look = val("emLook"); }
+function avTarget(pfx) { return pfx === "cw" ? S.cw.av : pfx === "em" ? S.editMe.av : S.libForm.av; }
+function avEdit(pfx, fn) { if (pfx === "em") keepEditMe(); fn(avTarget(pfx)); refreshSheet(); }
+const ACT = {
+  // navigation
+  home() { if (isBusy()) return toast("Wait for the AI to finish first"); flushWorld(); S.view = { screen: "home", tab: "feed" }; S.W = null; S.snaps = []; render(); },
+  back() { if (S.view.post) S.view.post = null; else if (S.view.dm) { S.view.dm = null; S.view.tab = "dms"; } render(); },
+  tab(el) { const same = S.view.tab === el.dataset.id && !S.view.post && !S.view.dm; S.view.tab = el.dataset.id; S.view.post = null; S.view.dm = null; render(); if (same) { const sc = $(".scroll", app); if (sc) sc.scrollTop = 0; } },
+  async openWorld(el) {
+    const id = el.dataset.id; const w = await loadWorld(id);
+    if (!w) { toast("Couldn't find this world's save"); S.G.worlds = S.G.worlds.filter(x => x.id !== id); saveMeta(); return render(); }
+    normalizeWorld(w); S.W = w; S.snaps = []; S.view = { screen: "world", tab: "feed", post: null, dm: null }; checkAch(); render();
+  },
+  newWorld() { if (!S.G.apiKey) return openApi("Add your OpenRouter key to build a world."); startCreate(); },
+  openPost(el) { if (S.sheet) closeLayer(); S.view.dm = null; S.view.post = el.dataset.id; S.view.replyDraft = ""; render(); },
+  profileOf(el, ev) {
+    const a = el.dataset.a;
+    if (!a) { const up = el.parentElement && el.parentElement.closest("[data-act]"); if (up) run(up, ev); return; }
+    if (a === "me") { closeLayer(); S.view.post = null; S.view.dm = null; S.view.tab = "profile"; return render(); }
+    S.charView = a; openSheet(sheetChar);
+  },
+  notif(el) {
+    const n = S.W.notifs.find(x => x.id === el.dataset.id); if (!n) return; n.read = true;
+    if (n.ref?.post) S.view.post = n.ref.post; else if (n.ref?.dm) S.view.dm = n.ref.dm; else if (n.k === "event") S.view.tab = "explore"; else if (["level", "milestone", "ach"].includes(n.k)) S.view.tab = "profile";
+    render();
+  },
+  // feed
+  post() {
+    const t = val("composer"), ph = S.view.photoOpen ? val("photoIn").trim() : "";
+    if (!t.trim() && !ph) return toast("Write something first");
+    if (!S.G.apiKey) return openApi("Add your OpenRouter key to start posting.");
+    if (guard()) return;
+    S.view.draft = ""; S.view.photoDraft = ""; S.view.photoOpen = false; makePost(t, ph);
+  },
+  photoToggle() { S.view.photoOpen = !S.view.photoOpen; if (!S.view.photoOpen) S.view.photoDraft = ""; render(); if (S.view.photoOpen) $("#photoIn")?.focus(); },
+  boost(el) { const k = el.dataset.id === "viral" ? "boostViral" : "boostClout"; S.view[k] = !S.view[k]; render(); },
+  like(el) {
+    const p = S.W.posts.find(x => x.id === el.dataset.id); if (!p) return;
+    p.liked = !p.liked; p.likes += p.liked ? 1 : -1;
+    if (p.liked && typeof p.a === "string" && p.a !== "me" && !p.likedOnce) { p.likedOnce = true; const c = S.W.chars.find(x => x.id === p.a); if (c && c.unlocked) c.rel = clamp(c.rel + 1, -100, 100); }
+    saveWorld(); render();
+  },
+  rt(el) { const p = S.W.posts.find(x => x.id === el.dataset.id); if (!p) return; p.rted = !p.rted; p.rts += p.rted ? 1 : -1; saveWorld(); render(); },
+  reply(el) { const t = val("replyIn"); if (!t.trim()) return; if (!S.G.apiKey) return openApi("Add your OpenRouter key first."); if (guard()) return; S.view.replyDraft = ""; makeReply(el.dataset.id, t); },
+  focusReply() { $("#replyIn")?.focus(); },
+  rewind() { rewind(); },
+  // stories
+  story(el) { closeLayer(); openStories(el.dataset.id); },
+  myStory(el, ev) { ev.stopPropagation(); S.storyForm = S.storyForm || { bg: 0, t: "", img: "" }; openSheet(sheetMyStory); },
+  sfBg(el) { S.storyForm.bg = +el.dataset.id; refreshSheet(); },
+  sfPost() { if (!S.G.apiKey) return openApi("Add your OpenRouter key first."); postStory(); },
+  svClose() { S.sv = null; layer.innerHTML = ""; saveWorld(); render(); },
+  svPrev() { svStep(-1); }, svNext() { svStep(1); },
+  svSend(el) { const t = val("svReply"); if (!t.trim() || guard()) return; const s = S.sv.byA[S.sv.order[S.sv.ai]][S.sv.si]; S.sv = null; layer.innerHTML = ""; pushDM(el.dataset.id, "sys", `You replied to their story: “${String(s.t || (s.img && s.img.d) || "").slice(0, 60)}”`); S.view.post = null; S.view.dm = el.dataset.id; S.stickBottom = true; render(); sendDM(el.dataset.id, t); },
+  // explore
+  nextDay() { if (!S.G.apiKey) return openApi("Add your OpenRouter key first."); nextDay(); },
+  useTrend(el) { S.view.tab = "feed"; S.view.draft = (S.view.draft ? S.view.draft + " " : "") + el.dataset.id + " "; render(); $("#composer")?.focus(); },
+  eventChoice(el) { if (!S.G.apiKey) return openApi("Add your OpenRouter key first."); resolveEvent(el.dataset.id, el.dataset.choice); },
+  eventCustom(el) { const t = val("ev_" + el.dataset.id); if (!t.trim()) return toast("Write your move first"); resolveEvent(el.dataset.id, t); },
+  actChar(el) { S.view.actChar = el.dataset.id; render(); },
+  actIdea(el) { S.view.actDraft = el.dataset.id; render(); },
+  startAct() { const t = val("actIn") || S.view.actDraft; if (!S.view.actChar) return toast("Pick a character first"); if (!String(t).trim()) return toast("Pick or type an activity"); if (!S.G.apiKey) return openApi("Add your OpenRouter key first."); if (guard()) return; S.view.actDraft = ""; startActivity(S.view.actChar, t); },
+  resumeAct() { openActivity(); },
+  acceptInvite(el) { const i = S.W.invites.find(x => x.id === el.dataset.id); if (i) startActivity(i.cid, i.act, i.id); },
+  declineInvite(el) { S.W.invites = S.W.invites.filter(x => x.id !== el.dataset.id); saveWorld(); render(); },
+  actOpt(el) { actTurn(el.dataset.choice); },
+  actSend() { const t = val("actTurn"); if (t.trim()) actTurn(t); },
+  actUndo() { actUndo(); },
+  actClose() { S.W.act = null; saveWorld(); closeLayer(); render(); },
+  // DMs
+  openDM(el) { S.view.dm = el.dataset.id; S.view.dmDraft = ""; S.stickBottom = true; render(); },
+  sendDM(el) { const t = val("dmIn"); if (!t.trim()) return; if (!S.G.apiKey) return openApi("Add your OpenRouter key first."); if (guard()) return; S.view.dmDraft = ""; S.stickBottom = true; sendDM(el.dataset.id, t); },
+  dmFromProfile(el) { closeLayer(); S.view.post = null; S.view.dm = el.dataset.id; S.stickBottom = true; render(); },
+  actFromProfile(el) { closeLayer(); S.view.post = null; S.view.dm = null; S.view.tab = "explore"; S.view.actChar = el.dataset.id; render(); $("#actIn")?.focus(); },
+  setChem(el) { const c = S.W.chars.find(x => x.id === S.charView); if (!c) return; c.chem = el.dataset.id; pushDM(c.id, "sys", `You and ${c.name} are now: ${c.chem}`); remember(`${S.W.me.name} and ${c.name}'s relationship became "${c.chem}"`); saveWorld(); refreshSheet(); },
+  // profile
+  upSkill(el) { upgradeSkill(+el.dataset.id); },
+  unlock(el) { unlockChar(el.dataset.id); },
+  addCustom() { if (S.W.me.unlocks < 1) return toast("Clear a milestone (or buy an unlock) to add a character"); S.libAdd = true; S.libForm = null; openSheet(sheetLibrary); },
+  libAddToWorld(el) { S.libAdd = false; addCustomToWorld(el.dataset.id); },
+  editMe() { S.editMe = null; openSheet(sheetEditMe); },
+  emShuffle() { avEdit("em", a => a.sd = uid()); }, emStyle(el) { avEdit("em", a => a.st = el.dataset.id); }, emColor(el) { avEdit("em", a => a.c = +el.dataset.id); },
+  emSave() { keepEditMe(); const me = S.W.me, e = S.editMe; me.name = e.name.trim() || me.name; me.handle = e.handle.replace(/^@/, "").replace(/\s+/g, "") || me.handle; me.bio = e.bio; me.look = e.look; me.av = e.av; saveWorld(); closeLayer(); render(); toast("Profile saved"); },
+  editGoal() { openSheet(sheetGoal); },
+  goalSave() { S.W.me.goal = val("goalIn").trim(); remember(`${S.W.me.name} set a new goal: ${S.W.me.goal}`); saveWorld(); closeLayer(); render(); },
+  worldSettings() { S.wsState = {}; openSheet(sheetWorldSettings); },
+  wsSave() { const W = S.W; W.name = val("wsName").trim() || W.name; W.desc = val("wsDesc"); W.madness = +val("wsMad") || W.madness; W.muteNews = $("#wsMute").checked; W.imgStyle = val("wsImg"); saveWorld(); closeLayer(); render(); toast("World settings saved"); },
+  wsAskDelete() { S.wsState.confirm = true; refreshSheet(); }, wsCancel() { S.wsState.confirm = false; refreshSheet(); },
+  wsDelete() { if (guard()) return; const id = S.W.id; S.G.worlds = S.G.worlds.filter(x => x.id !== id); clearTimeout(tWorld); LS.del("mc_w_" + id); cloudDirty("del", id); S.W = null; saveMeta(); closeLayer(); S.view = { screen: "home", tab: "feed" }; S.snaps = []; render(); toast("World deleted"); },
+  // shop
+  shop() { openSheet(sheetShop); },
+  buyViral() { buy(25, () => S.W.me.boosts.viral++, "Got a viral boost"); },
+  buyClout() { buy(20, () => S.W.me.boosts.clout++, "Got a clout boost"); },
+  buyUnlock() { buy(60, () => S.W.me.unlocks++, "Got an extra unlock. Use it on your profile"); },
+  // API
+  api() { openApi(""); },
+  async keySave() { const k = val("keyIn").trim(); if (!k) return toast("Paste your key first"); S.G.apiKey = k; saveMeta(); S.apiMsg = ""; S.key = null; refreshSheet(); await refreshKey(); if (S.key && !S.key.error) toast("Key saved and working"); render(); },
+  keyRefresh() { S.key = null; refreshSheet(); refreshKey(); },
+  keyRemove() { S.G.apiKey = ""; S.key = null; saveMeta(); refreshSheet(); render(); toast("Key removed from this browser"); },
+  modelPick(el) { if (el.value) { S.G.model = el.value; S.G.modelAuto = false; saveMeta(); refreshSheet(); renderMeter(); toast("Model set: " + el.value); } },
+  modelCustom() { const m = val("modelCustom").trim(); if (!m) return; S.G.model = m; S.G.modelAuto = false; saveMeta(); refreshSheet(); renderMeter(); toast("Model set: " + m); },
+  async modelsReload() { S.models = null; refreshSheet(); await loadModels(); refreshSheet(); },
+  // settings
+  settings() { S.setState = {}; openSheet(sheetSettings); },
+  setTheme(el) { S.G.theme = el.dataset.id; applyTheme(); saveMeta(); refreshSheet(); render(); },
+  setImg(el) { S.G.imgMode = el.dataset.id; saveMeta(); refreshSheet(); render(); if (S.G.imgMode === "ai") pumpImgs(); },
+  library() { S.libAdd = false; S.libForm = null; openSheet(sheetLibrary); },
+  lfNew() { S.libForm = { id: null, name: "", handle: "", bio: "", look: "", desc: "", av: { e: "🦊", c: 2, st: "lorelei", sd: uid() } }; refreshSheet(); },
+  lfEdit(el) { const l = S.G.library.find(x => x.id === el.dataset.id); if (l) { S.libForm = JSON.parse(JSON.stringify(l)); S.libForm.av = { st: "lorelei", sd: uid(), ...S.libForm.av }; refreshSheet(); } },
+  lfDel(el) { S.G.library = S.G.library.filter(x => x.id !== el.dataset.id); saveMeta(); refreshSheet(); },
+  lfShuffle() { avEdit("lf", a => a.sd = uid()); }, lfStyle(el) { avEdit("lf", a => a.st = el.dataset.id); }, lfColor(el) { avEdit("lf", a => a.c = +el.dataset.id); },
+  lfAI() { lfAI(); },
+  lfCancel() { S.libForm = null; refreshSheet(); },
+  lfSave() {
+    const f = S.libForm; if (!f.name.trim()) return toast("Add a name first");
+    f.handle = (f.handle || f.name).replace(/^@/, "").replace(/\s+/g, "_").slice(0, 24);
+    const rec = { id: f.id || uid("l"), name: f.name.trim(), handle: f.handle, bio: f.bio.trim(), look: (f.look || "").trim(), desc: f.desc.trim(), av: f.av };
+    const i = S.G.library.findIndex(x => x.id === rec.id); if (i >= 0) S.G.library[i] = rec; else S.G.library.push(rec);
+    S.libForm = null; saveMeta(); refreshSheet(); toast("Character saved");
+  },
+  exportSave() {
+    flushWorld();
+    const meta = JSON.parse(JSON.stringify(S.G)); meta.apiKey = "";
+    const out = { app: "main-character", meta, worlds: {} };
+    for (const w of S.G.worlds) { const d = LS.get("mc_w_" + w.id); if (d) out.worlds[w.id] = d; }
+    S.setState.export = JSON.stringify(out); S.setState.importing = false; refreshSheet();
+  },
+  copyExport() { const t = $("#exportBox"); if (!t) return; const sel = () => { t.select(); toast("Text selected. Copy it with your keyboard or menu."); }; if (navigator.clipboard) navigator.clipboard.writeText(t.value).then(() => toast("Copied"), sel); else sel(); },
+  importOpen() { S.setState.importing = true; S.setState.export = ""; refreshSheet(); },
+  doImport() {
+    if (guard()) return;
+    try {
+      const o = JSON.parse(val("importBox"));
+      if (!o.meta || !Array.isArray(o.meta.worlds)) throw 0;
+      const key = S.G.apiKey, model = S.G.model;
+      // worlds of the old save that the import doesn't contain would be unreachable: free their storage
+      clearTimeout(tWorld);
+      const keep = new Set(o.meta.worlds.map(w => w && w.id));
+      for (const w of S.G.worlds) if (!keep.has(w.id)) { LS.del("mc_w_" + w.id); cloudDirty("del", w.id); }
+      S.G = Object.assign(newGlobal(), o.meta); S.G.apiKey = key || o.meta.apiKey || ""; S.G.model = S.G.model || model;
+      for (const id in (o.worlds || {})) { const w = normalizeWorld(o.worlds[id]); w.savedAt = Date.now(); LS.set("mc_w_" + id, w); cloudDirty("world", id); }
+      saveMeta(); closeLayer(); S.W = null; S.view = { screen: "home", tab: "feed" }; render(); toast("Save imported");
+    } catch { toast("That save text isn't valid. Copy the whole export again."); }
+  },
+  askReset() { S.setState.confirmReset = true; refreshSheet(); }, cancelReset() { S.setState.confirmReset = false; refreshSheet(); },
+  doReset() {
+    if (guard()) return;
+    for (const w of S.G.worlds) { LS.del("mc_w_" + w.id); cloudDirty("del", w.id); }
+    const key = S.G.apiKey, model = S.G.model, theme = S.G.theme, owner = S.G.owner;
+    S.G = newGlobal(); Object.assign(S.G, { apiKey: key, model, theme, owner, streak: { n: 1, last: todayKey() } });
+    seedSample(); cloudDirty("world", "w_sample"); saveMeta(); closeLayer(); S.W = null; S.view = { screen: "home", tab: "feed" }; S.snaps = []; render(); toast("Fresh start");
+  },
+  // create world
+  cwPreset(el) { S.cw.preset = +el.dataset.id; refreshSheet(); },
+  cwLib(el) { const a = S.cw.libPick, id = el.dataset.id; S.cw.libPick = a.includes(id) ? a.filter(x => x !== id) : [...a, id]; refreshSheet(); },
+  cwImg(el) { S.cw.imgStyle = el.dataset.id; refreshSheet(); },
+  cwNext() { if (S.cw.preset === -1 && !S.cw.custom.trim()) return toast("Describe the world or fandom first"); S.cw.step = 2; refreshSheet(); },
+  cwBack() { S.cw.step = 1; refreshSheet(); },
+  cwShuffle() { avEdit("cw", a => a.sd = uid()); }, cwStyle(el) { avEdit("cw", a => a.st = el.dataset.id); }, cwColor(el) { avEdit("cw", a => a.c = +el.dataset.id); },
+  cwVibe(el) { S.cw.vibe = el.dataset.id; refreshSheet(); },
+  cwBioAI() { cwBioAI(); },
+  cwBioPick(el) { S.cw.bio = S.cw.bios[+el.dataset.id] || S.cw.bio; refreshSheet(); },
+  cwGen() { cwGenerate(); },
+  cwPick(el) { S.cw.pick = +el.dataset.id; refreshSheet(); },
+  cwStart() { cwStart(); },
+  // account & cloud save
+  account() { S.acct = { mode: "in" }; openSheet(sheetAccount); },
+  acMode(el) { const a = S.acct; a.mode = el.dataset.id; a.err = a.ok = ""; refreshSheet(); },
+  acSubmit() {
+    const a = S.acct, email = String(a.email || "").trim(), pass = String(a.pass || "");
+    if (!email || !pass) { a.err = "Enter your email and password."; return refreshSheet(); }
+    acRun(async () => {
+      if (a.mode === "up") {
+        const { data, error } = await CLOUD.sb.auth.signUp({ email, password: pass, options: { emailRedirectTo: appURL() } });
+        if (error) throw error;
+        if (!data.session) { a.mode = "in"; a.ok = "Almost done! Open the link we emailed to " + email + ", then sign in here."; }
+      } else {
+        const { error } = await CLOUD.sb.auth.signInWithPassword({ email, password: pass });
+        if (error) throw error;
+        a.pass = ""; toast("Signed in. Syncing your save…");
+      }
+    });
+  },
+  acGoogle() { acRun(async () => { const { error } = await CLOUD.sb.auth.signInWithOAuth({ provider: "google", options: { redirectTo: appURL() } }); if (error) throw error; }); },
+  acForgot() {
+    const a = S.acct, email = String(a.email || "").trim(); if (!email) { a.err = "Enter your email first."; return refreshSheet(); }
+    acRun(async () => { const { error } = await CLOUD.sb.auth.resetPasswordForEmail(email, { redirectTo: appURL() }); if (error) throw error; a.ok = "Check " + email + " for a link to set a new password."; });
+  },
+  acNewPass() {
+    const a = S.acct, p = String(a.newPass || ""); if (p.length < 6) { a.err = "Use at least 6 characters."; return refreshSheet(); }
+    acRun(async () => { const { error } = await CLOUD.sb.auth.updateUser({ password: p }); if (error) throw error; S.acct = { mode: "in" }; toast("Password updated"); });
+  },
+  acSync() { cloudPull(); },
+  acSignOut() { signOut(false); },
+  acSignOutForce() { signOut(true); },
+  acStay() { S.acct.unsynced = false; refreshSheet(); },
+  async install() {
+    if (installEvt) { installEvt.prompt(); try { await installEvt.userChoice; } catch { } installEvt = null; render(); refreshSheet(); }
+    else openSheet(sheetInstall);
+  },
+  // generic
+  close() { closeLayer(); render(); },
+  scrim(el, ev) { if (ev.target === el && !(S.sheet && S.sheet.fn === sheetCreate && S.cw && S.cw.step === 3)) { closeLayer(); render(); } }
+};
+function buy(cost, fn, msg) { if (S.G.gems < cost) return toast("Not enough gems"); S.G.gems -= cost; fn(); saveMeta(); if (S.W) saveWorld(); refreshSheet(); render(); toast(msg); }
+function run(el, ev) { const f = ACT[el.dataset.act]; if (f) f(el, ev); }
+document.addEventListener("click", ev => {
+  const el = ev.target.closest("[data-act]"); if (!el) return;
+  if (el.dataset.act === "avTog") return;
+  if (el.dataset.act === "scrim" && ev.target !== el) return;
+  run(el, ev);
+});
+document.addEventListener("change", ev => {
+  const el = ev.target;
+  if (el.id === "avTog") { S.G.avatars = el.checked; saveMeta(); refreshSheet(); render(); }
+  if (el.dataset && el.dataset.actChange) { const f = ACT[el.dataset.actChange]; if (f) f(el, ev); }
+});
+document.addEventListener("input", ev => {
+  const el = ev.target, d = el.dataset || {};
+  if (d.draft) S.view[d.draft] = el.value;
+  if (d.cw && S.cw) { S.cw[d.cw] = d.cw === "madness" ? +el.value : el.value; if (d.cw === "madness") $("#cwMadL").textContent = `${el.value} · ${MADNESS[el.value]}`; }
+  if (d.lf && S.libForm) { S.libForm[d.lf] = el.value; if (d.lf === "desc") { const c = $("#lfCount"); if (c) c.textContent = el.value.length + "/1500"; } }
+  if (d.sf && S.storyForm) S.storyForm[d.sf] = el.value;
+  if (d.ac && S.acct) S.acct[d.ac] = el.value;
+  if (el.id === "wsMad") $("#wsMadL").textContent = `${el.value} · ${MADNESS[el.value]}`;
+  if (el.hasAttribute && el.hasAttribute("data-grow")) { el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight, 160) + "px"; }
+});
+document.addEventListener("keydown", ev => {
+  const el = ev.target;
+  if (ev.key === "Escape" && (S.sheet || S.sv)) { if (S.sv) ACT.svClose(); else ACT.close(); return; }
+  if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) {
+    const map = { dmIn: "[data-act=sendDM]", replyIn: "[data-act=reply]", actTurn: "[data-act=actSend]", svReply: "[data-act=svSend]", actIn: "[data-act=startAct]", keyIn: "[data-act=keySave]", acPass: "[data-act=acSubmit]", acNew: "[data-act=acNewPass]", modelCustom: "[data-act=modelCustom]", photoIn: "[data-act=post]" };
+    if (el.id && el.id.startsWith("ev_")) { ev.preventDefault(); const b = el.parentElement.querySelector("[data-act=eventCustom]"); if (b) run(b, ev); return; }
+    if (map[el.id]) { ev.preventDefault(); const b = document.querySelector(map[el.id]); if (b) run(b, ev); return; }
+    if (el.id === "composer" && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); ACT.post(); }
+  }
+  if ((ev.key === "Enter" || ev.key === " ") && el.getAttribute && el.getAttribute("role") === "button") { ev.preventDefault(); run(el, ev); }
+});
+document.addEventListener("scroll", () => { const sc = $(".scroll", app); if (sc && S.view.dm) S.stickBottom = sc.scrollHeight - sc.scrollTop - sc.clientHeight < 80; }, true);
+function applyTheme() {
+  const t = S.G.theme; if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
+  const m = $("#themeColor"); if (m) m.content = isDark() ? "#1C171B" : "#FFFFFF";
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => S.G && applyTheme());
+
+/* ================= world normalisation & sample world ================= */
+function normalizeWorld(w) {
+  for (const k of ["posts", "stories", "notifs", "log", "events", "invites", "trends", "chars"]) if (!Array.isArray(w[k])) w[k] = [];
+  for (const k of ["dms", "dmRead", "dmMeta"]) if (!w[k] || typeof w[k] !== "object") w[k] = {};
+  w.me = Object.assign({ name: "me", handle: "me", bio: "", look: "", av: { e: "😎", c: 0 }, followers: 100, humor: 10, aura: 10, xp: 0, level: 1, sp: 0, unlocks: 0, skills: [], goal: "", milestones: [], boosts: { viral: 0, clout: 0 } }, w.me || {});
+  if (!w.me.boosts) w.me.boosts = { viral: 0, clout: 0 };
+  for (const p of w.posts) { if (!Array.isArray(p.replies)) p.replies = []; p.pending = false; }
+  w.madness = clamp(num(w.madness) || 3, 1, 5); w.day = Math.max(1, num(w.day) || 1);
+  if (w.act) w.act.busy = false;
+  for (const e of w.events) e.busy = false;
+  return w;
+}
+function seedSample() {
+  const day = 1, t = Date.now();
+  const ch = (id, name, handle, bio, desc, look, e, c, st, followers, extra = {}) => Object.assign({ id, name, handle, bio, desc, look, av: { e, c, st, sd: handle }, followers, unlocked: false, followsMe: false, iFollow: false, kind: "char", rel: 0, chem: "" }, extra);
+  const W = {
+    id: "w_sample", sample: true, name: "Northstar University", emoji: "🎓", fandom: "College life", imgStyle: "photo",
+    desc: "Northstar University during freshman orientation. Everyone is watching the race for Campus Icon, and an anonymous tea page knows everything. You're a first-year media student whose photos are starting to get noticed.",
+    madness: 3, muteNews: false, day, createdAt: t, savedAt: 0,
+    me: { name: "Mia", handle: "mia.shoots", bio: "media studies '29 · camera always on · here to become Campus Icon (kidding…maybe)", look: "short black bob, silver hoops, oversized denim jacket, film camera", vibe: "Funny", av: { e: "🌙", c: 4, st: "notionists", sd: "mia.shoots" },
+      followers: 340, humor: 14, aura: 11, xp: 20, level: 1, sp: 1, unlocks: 0,
+      skills: [{ name: "Killer shots", desc: "Photos land, people double-tap, clubs want you", lv: 1 }, { name: "Quick wit", desc: "Sharp comebacks and laughs, but risk of drama", lv: 1 }, { name: "Social butterfly", desc: "New people open up to you faster", lv: 1 }],
+      goal: "Win Campus Icon this semester without getting cancelled",
+      milestones: ["People in your faculty know your name", "Shoot photos for the cheer page", "Survive orientation without getting exposed", "Hit 1K followers", "Collab with last year's Campus Icon", "Go viral campus-wide", "Win over the scary cheer captain", "Get nominated for Campus Icon", "Take the Campus Icon crown"].map(x => ({ t: x, done: false })),
+      boosts: { viral: 1, clout: 1 } },
+    chars: [
+      ch("c_ryder", "Ryder Vale", "ryder.vale", "cheer captain · senior · on time is late", "Senior cheer captain. Stern face, few words, posts like announcements with no emoji. Secretly soft on freshmen who try hard. Quietly impressed by Mia's photos but would never say it directly.", "tall, buzz cut, team varsity jacket, whistle on a lanyard", "🐺", 1, "micah", 28400, { unlocked: true, followsMe: true, iFollow: true, rel: 12, chem: "Mentor" }),
+      ch("c_sienna", "Sienna Monroe", "sienna.monroe", "last year's Campus Icon ✨ collabs in DM", "Last year's Campus Icon and queen of the explore page. Polished, confident, subtweets politely but it stings. Terrified of losing her spot, sees Mia as a threat, but also wants a great photographer.", "long honey-blonde waves, gold jewelry, pastel blazer, perfect makeup", "👑", 0, "lorelei", 152000, { unlocked: true, followsMe: true, iFollow: true, rel: -5, chem: "Rivals" }),
+      ch("c_theo", "Theo Park", "theo_lol", "class clown · professional laugher", "Mia's lab partner and the class clown. Types in all lowercase, lives on memes, fiercely loyal but cannot keep a secret to save his life.", "messy curly hair, graphic tee, bucket hat, always holding bubble tea", "🐸", 3, "adventurer", 2100, { unlocked: true, followsMe: true, iFollow: true, rel: 35, chem: "Best friends" }),
+      ch("c_ava", "Ava Lune", "ava.on.air", "radio club president · on air wednesday nights", "Radio club president with a velvet voice. Posts short lines that read like poetry. Knows half the campus's secrets because people call in to her show.", "silver bob, headphones around neck, black turtleneck", "🎧", 6, "lorelei", 9800),
+      ch("c_kai", "Kai Mercer", "kai.codes", "cs sophomore · bugs are friends", "Quiet CS kid who builds apps. Secretly the admin of the campus tea page (nobody knows). Replies short, in programmer slang. Softens for people who are genuinely kind to him.", "glasses, black hoodie, laptop covered in stickers", "💻", 2, "notionists", 640),
+      ch("c_hart", "Prof. Nadia Hart", "prof.hart", "media studies advisor · meme literate", "Faculty advisor who is better at memes than her students. Kind but strict about deadlines. Reposts student work and teases campus ships.", "red cat-eye glasses, cardigan, coffee mug that says 'deadline'", "📚", 7, "personas", 45000),
+      ch("c_blake", "Blake Ashford", "blake.ashford", "the party starts when I arrive 🍸", "Rich party boy and Sienna's ex. Shows off everything, flirts with everyone, but genuinely loyal to friends. Wants Mia to shoot his parties.", "slicked-back dark hair, silk shirt, sunglasses at night", "🍸", 5, "micah", 61000),
+      ch("c_honey", "Honey Reyes", "honey.bakes", "cookies outside the media building 🧁 order in DM", "Senior who runs a cookie stand outside the media building. Sweet as sugar and knows every rumor before the tea page does.", "pink apron, braids, flour on her cheek", "🧁", 9, "open-peeps", 5300),
+      ch("c_daily", "Northstar Daily", "northstar.daily", "official Northstar University news", "Official campus news account, polite and formal.", "", "📰", 7, "initials", 210000, { kind: "news", av: { e: "📰", c: 7, st: "initials", sd: "Northstar Daily" } }),
+      ch("c_tea", "Northstar Tea", "northstar.tea", "anonymous campus tea ☕ submissions open", "Anonymous gossip page. Spicy, loves blind items and hints.", "", "☕", 3, "initials", 98000, { kind: "news", av: { e: "☕", c: 3, st: "initials", sd: "Northstar Tea" } })
+    ],
+    posts: [], dms: {}, dmRead: {}, dmMeta: {}, stories: [], notifs: [], log: [], events: [], invites: [],
+    trends: ["#NorthstarOrientation", "#CampusIcon", "#RyderSmiled", "#BobaRun"], act: null
+  };
+  const P = (a, text, img, likes, rts, views, extra = {}) => Object.assign({ id: uid("p"), a, t: text, img: img ? { d: img, s: hashN(img) % 999999 } : null, day, ts: t, likes, rts, views, replies: [] }, extra);
+  const R = (a, text, likes) => ({ id: uid("r"), a, t: text, likes, ts: t });
+  const rand = (h, n, e, c, st) => ({ h, n, e, c, st });
+  W.posts = [
+    P("c_tea", "blind item: a certain first-year media student took orientation photos so good the seniors were sharing them all night 👀 hint: posts at 2am", null, 1240, 88, 31000, { tag: "news", replies: [R(rand("fern.films", "Fern", "🌸", 0, "lorelei"), "it's the one whose name starts with M right??", 64), R("c_theo", "this page finds out stuff faster than me and i sit NEXT to her", 102)] }),
+    P("c_sienna", "Campus Icon isn't something you just walk into ✨ just a friendly reminder to the freshmen", "mirror selfie in a pastel blazer, gold jewelry, soft golden-hour light in a dorm room", 8900, 420, 120000, { tag: "drama", replies: [R(rand("sienna.stan", "sienna supremacy", "💖", 9, "big-smile"), "the queen has spoken, everyone sit down", 310), R(rand("iris.online", "iris", "🫠", 6, "notionists"), "who is she subtweeting tho 👀", 95)] }),
+    P("me", "day one of orientation survived on one water bottle and theo's emotional support 🥲📸", "crowd of freshmen in matching orange shirts cheering on a sunny campus lawn, shot from above", 86, 6, 900, { replies: [R("c_theo", "i bought that water bottle. i expect a boba in return", 21), R("c_ryder", "Be on time tomorrow, Mia.", 40), R(rand("bam.film", "bam", "🎞️", 2, "adventurer"), "your photos are so good, followed!", 12)] }),
+    P("c_ryder", "Announcement: cheer practice tomorrow, 7:00 sharp. Anyone late sings the school song solo in front of everyone.", null, 1500, 210, 22000),
+    P("c_theo", "everyone i saw ryder smile ONCE today. logging it as a historic event 💀", "blurry phone photo of a stadium bleacher crowd, someone in a varsity jacket half smiling in the distance", 640, 120, 7800, { replies: [R(rand("media.memes", "media memes", "🤡", 3, "big-smile"), "pics or it didn't happen", 88)] }),
+    P("c_daily", "Applications for this year's Campus Icon competition are now open. Submit to your faculty student council by the end of the month.", "campus clock tower against a bright blue sky with a banner hanging from it", 3200, 900, 64000, { tag: "news" })
+  ];
+  W.dms = {
+    c_theo: [{ f: "them", t: "mia did you SEE sienna's post", day, ts: t }, { f: "them", t: "pretty sure that was about you 👀", day, ts: t + 1 }],
+    c_ryder: [{ f: "them", t: "Send me the full-size files from today. Using them on the cheer page.", day, ts: t - 5000 }, { f: "me", t: "on it! sending tonight", day, ts: t - 4000 }, { f: "them", t: "Thanks.", day, ts: t - 3000 }]
+  };
+  W.dmRead = { c_ryder: t }; W.dmMeta = { c_ryder: { read: true } };
+  W.stories = [{ id: uid("s"), a: "c_sienna", t: "getting ready for tonight 💄 not invited? so sorry babe", img: { d: "vanity table with makeup, ring light and a sparkly party dress on a hanger", s: 4417 }, bg: 3, day, ts: t, seen: false },
+    { id: uid("s"), a: "c_theo", t: "the boba mia owes me (still waiting)", img: { d: "close-up of a brown sugar boba tea held up against a campus background", s: 2209 }, bg: 1, day, ts: t, seen: false }];
+  W.events = [{ id: uid("e"), title: "The cheer page wants your photo", desc: "Ryder wants your shot as the cheer page's cover, but Sienna commented that the cover should be a photo of her. What do you do?", choices: ["Send Ryder your best shot, no matter who's mad", "Offer to shoot a new cover with Sienna in it", "Post the photo on your own page first and tag everyone"], day, done: false }];
+  W.log = ["[day 1] Mia, a first-year media student, took orientation photos the seniors shared all night; the tea page hinted at her", "[day 1] Sienna posted a 'reminder' that Campus Icon isn't easy; people think it was aimed at Mia", "[day 1] Ryder asked for the full-size photos for the cheer page and Mia promised to send them tonight"];
+  W.notifs = [{ id: uid("n"), k: "dm", t: "Theo sent you a message", ts: t, read: false, ref: { dm: "c_theo" } }, { id: uid("n"), k: "event", t: "A new event is waiting in Explore", ts: t, read: false }, { id: uid("n"), k: "reply", t: "3 people replied to your post", ts: t - 9000, read: true }];
+  LS.set("mc_w_" + W.id, W);
+  S.G.worlds.push({ id: W.id, name: W.name, emoji: W.emoji, day: 1, followers: W.me.followers, me: W.me.name, last: t, sample: true });
+  S._sampleW = W;
+}
+
+/* ================= boot ================= */
+const _loadWorld = loadWorld;
+loadWorld = async id => (await _loadWorld(id)) || (S._sampleW && S._sampleW.id === id ? S._sampleW : null);
+function boot() {
+  const saved = LS.get("mc_meta");
+  S.G = Object.assign(newGlobal(), saved || {});
+  S.G.stats = Object.assign(newGlobal().stats, S.G.stats || {});
+  S.G.req = S.G.req || { day: "", n: 0 };
+  if (!saved) seedSample();
+  applyTheme();
+  render();
+  cloudInit();      // runs the daily check-in once the cloud copy (if any) is merged in
+  registerSW();
+  loadModels().then(() => { if (S.sheet && S.sheet.fn === sheetApi) refreshSheet(); renderMeter(); });
+  if (S.G.apiKey) refreshKey();
+  else setTimeout(() => openApi("Welcome! Paste a free OpenRouter API key to start. You can look around the sample world first."), 400);
+}
+boot();
+</script>
+</body>
+</html>
