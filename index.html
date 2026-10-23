@@ -148,6 +148,14 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 .actbar button{display:inline-flex;gap:6px;align-items:center;padding:4px 8px;border-radius:8px}
 .actbar svg{width:19px;height:19px}
 .actbar .on-like{color:var(--accent)} .actbar .on-rt{color:var(--good)}
+.post.reply{cursor:pointer}
+.post.has-line{border-bottom:0;padding-bottom:2px}
+.avcol{display:flex;flex-direction:column;align-items:center;flex:none}
+.tline{flex:1;width:2px;min-height:12px;background:var(--line);margin-top:4px;border-radius:2px}
+.post.reply.focus{background:color-mix(in srgb,var(--accent-soft) 30%,transparent)}
+.morelink{display:block;width:100%;text-align:left;padding-block:10px;color:var(--blue);font-size:14px;border-bottom:1px solid var(--line)}
+.morelink[disabled]{opacity:.5}
+.quote{margin-top:10px;border:1px solid var(--line);border-radius:14px;padding:10px 12px;cursor:pointer}
 .stats{display:flex;gap:16px;font-size:14px;color:var(--muted);padding-block:10px;border-bottom:1px solid var(--line);flex-wrap:wrap}
 .stats b{color:var(--fg)}
 
@@ -161,6 +169,9 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 /* DM */
 .dmlist .item{display:flex;gap:12px;align-items:center;padding-block:12px;border-bottom:1px solid var(--line);cursor:pointer}
 .unread{width:9px;height:9px;border-radius:50%;background:var(--blue);flex:none}
+.online{position:absolute;right:0;bottom:0;width:12px;height:12px;border-radius:50%;background:var(--good);border:2px solid var(--surface)}
+.gname{font-size:11.5px;color:var(--muted);margin:6px 0 1px 46px}
+.grow-msg{display:flex;gap:8px;align-items:flex-end}
 .chat{display:flex;flex-direction:column;gap:4px;padding-block:14px}
 .bub{max-width:76%;padding:8px 13px;border-radius:19px;white-space:pre-wrap;word-break:break-word;line-height:1.45}
 .bub.me{align-self:flex-end;background:var(--blue);color:#fff;border-bottom-right-radius:6px}
@@ -421,6 +432,7 @@ function pruneWorld(W) {
   W.posts = W.posts.slice(0, 160);
   for (const p of W.posts) if (p.replies && p.replies.length > 24) p.replies = p.replies.slice(-24);
   for (const k in W.dms) if (W.dms[k].length > 100) W.dms[k] = W.dms[k].slice(-100);
+  for (const g of W.groups || []) if (g.msgs.length > 150) g.msgs = g.msgs.slice(-150);
   W.notifs = W.notifs.slice(0, 80);
   W.log = W.log.slice(-45);
   W.stories = W.stories.filter(s => s.day >= W.day - 1).slice(-30);
@@ -439,6 +451,30 @@ function saveWorld() {
 function flushWorld() { if (S.W) { clearTimeout(tWorld); LS.set("mc_w_" + S.W.id, S.W); } }
 addEventListener("pagehide", () => { flushWorld(); cloudPush(); });
 async function loadWorld(id) { return LS.get("mc_w_" + id); }
+
+/* ================= daily backups (IndexedDB, this device) =================
+   The first time a world is opened each day, a copy is kept; the last 5 per world stay.
+   IndexedDB has far more room than localStorage, and Restore is one tap in World settings. */
+let bkP = null;
+function bkDB() {
+  return bkP || (bkP = new Promise((res, rej) => {
+    try { const r = indexedDB.open("mc_backups", 1); r.onupgradeneeded = () => r.result.createObjectStore("bk", { keyPath: "k" }); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }
+    catch (e) { rej(e); }
+  }));
+}
+function bkTx(mode, fn) { return bkDB().then(db => new Promise((res, rej) => { const tx = db.transaction("bk", mode), st = tx.objectStore("bk"); let out; Promise.resolve(fn(st, v => out = v)).catch(rej); tx.oncomplete = () => res(out); tx.onerror = () => rej(tx.error); })); }
+const bkPut = rec => bkTx("readwrite", st => st.put(rec));
+const bkDel = k => bkTx("readwrite", st => st.delete(k));
+const bkGet = k => bkTx("readonly", (st, done) => { const r = st.get(k); r.onsuccess = () => done(r.result); });
+const bkList = wid => bkTx("readonly", (st, done) => { const out = [], c = st.openCursor(); c.onsuccess = () => { const cur = c.result; if (cur) { if (cur.value.id === wid) out.push({ k: cur.value.k, ts: cur.value.ts, day: cur.value.day }); cur.continue(); } else done(out.sort((a, b) => b.ts - a.ts)); }; });
+async function dailyBackup(W) {
+  const t = todayKey(); S.bkDone = S.bkDone || {}; if (!W || S.bkDone[W.id] === t) return; S.bkDone[W.id] = t;
+  try {
+    const list = await bkList(W.id); if (list.some(x => x.k === W.id + "|" + t)) return;
+    await bkPut({ k: W.id + "|" + t, id: W.id, name: W.name, day: W.day, ts: Date.now(), data: JSON.stringify(W) });
+    for (const x of (await bkList(W.id)).slice(5)) await bkDel(x.k);
+  } catch { }
+}
 
 /* ================= cloud save (Supabase, optional) =================
    localStorage stays the working copy, so the game keeps running offline. When signed in, every
@@ -633,7 +669,7 @@ const OR = "https://openrouter.ai/api/v1";
 const PROV = {
   openrouter: { name: "OpenRouter", url: OR + "/chat/completions", keyF: "apiKey", modelF: "model", def: "", keyUrl: "https://openrouter.ai/keys", hint: "sk-or-v1-…" },
   groq: { name: "Groq", url: "https://api.groq.com/openai/v1/chat/completions", list: "https://api.groq.com/openai/v1/models", keyF: "groqKey", modelF: "groqModel", def: "llama-3.3-70b-versatile", keyUrl: "https://console.groq.com/keys", hint: "gsk_…" },
-  gemini: { name: "Gemini", url: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", list: "https://generativelanguage.googleapis.com/v1beta/openai/models", keyF: "geminiKey", modelF: "geminiModel", def: "gemini-2.5-flash", keyUrl: "https://aistudio.google.com/apikey", hint: "AIza…" }
+  gemini: { name: "Gemini", url: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", list: "https://generativelanguage.googleapis.com/v1beta/openai/models", keyF: "geminiKey", modelF: "geminiModel", def: "gemini-2.5-flash", keyUrl: "https://aistudio.google.com/apikey", hint: "Gemini API key" }
 };
 const PROV_IDS = Object.keys(PROV);
 const SYS = "You are the hidden game engine of a social-media role-play simulator. You write what the simulated people post and say. You always answer with ONE valid JSON object and nothing else: no markdown fences, no commentary, no thinking out loud.";
@@ -641,15 +677,48 @@ const provModel = p => S.G[PROV[p].modelF] || PROV[p].def;
 const aiOrder = () => { const o = (S.G.aiOrder || []).filter(x => PROV[x]); return [...o, ...PROV_IDS.filter(x => !o.includes(x))]; };
 const providerChain = () => aiOrder().filter(p => S.G[PROV[p].keyF] && provModel(p));
 const hasAI = () => providerChain().length > 0;
-/* providers that ran out of free requests rest until `until` (kept across reloads) */
+/* providers (OpenRouter: the whole account; Groq and Gemini: per model) that ran out of free
+   requests rest until `until` (kept across reloads) */
 const COOL = LS.get("mc_cool") || {};
-const cooling = p => COOL[p] && COOL[p].until > Date.now();
+const coolKey = (p, m) => p === "openrouter" ? p : p + "|" + (m || provModel(p));
+const cooling = (p, m) => { const c = COOL[coolKey(p, m)]; return !!(c && c.until > Date.now()); };
 const BADKEY = {};   // keys a provider rejected this session: tried last, until the key is changed
-function coolDown(p, e) {
-  const daily = e.status === 402 || /per[- ]?day|daily|rpd|free-models-per-day|quota|exhausted|credits/i.test(String(e.message || ""));
+function coolDown(p, m, e) {
+  const daily = e.status === 402 || /per[- ]?day|daily|rpd|tpd|tokens per day|free-models-per-day|quota|exhausted|credits/i.test(String(e.message || ""));
   let until = Date.now() + 60e3;
   if (daily) { if (p === "openrouter") { const d = new Date(); d.setUTCHours(24, 0, 0, 0); until = +d; } else until = Date.now() + 60 * 60e3; }
-  COOL[p] = { until, daily }; LS.set("mc_cool", COOL);
+  COOL[coolKey(p, m)] = { until, daily }; LS.set("mc_cool", COOL);
+}
+const clearCool = p => { for (const k of Object.keys(COOL)) if (k === p || k.startsWith(p + "|")) delete COOL[k]; LS.set("mc_cool", COOL); };
+
+/* ---- smart routing: each kind of job goes to the AI that suits it, and work is spread so no
+   single free quota runs dry first. Groq and Gemini count limits per model, so small jobs use a
+   lighter model with its own (much bigger) quota. ---- */
+const TASKS = {
+  story: { max: 5000, order: ["gemini", "openrouter", "groq"], label: "New days, chapters & building worlds", why: "long, creative writing" },
+  scene: { max: 2200, order: ["openrouter", "groq", "gemini"], label: "Posts, replies, events & new characters", why: "balanced" },
+  chat: { max: 1100, order: ["groq", "openrouter", "gemini"], label: "DMs, stories & activities", why: "fast replies" },
+  util: { max: 700, order: ["groq", "gemini", "openrouter"], label: "Small helpers (bios, photo search)", why: "light model, its own quota" }
+};
+const LIGHT = { groq: ids => ids.find(x => /llama-3\.1-8b-instant/.test(x)) || ids.find(x => /8b|instant/.test(x) && !/guard/.test(x)), gemini: ids => ids.find(x => /flash-lite/.test(x) && !/preview|exp/.test(x)) };
+function taskModel(p, task) {
+  if (task === "util" && LIGHT[p] && S.pmodels && S.pmodels[p]) { const m = LIGHT[p](S.pmodels[p]); if (m) return m; }
+  return provModel(p);
+}
+/* rough free daily request budgets, used only to spread work before anyone runs out */
+function budget(p, m) {
+  if (p === "openrouter") { const fr = S.key && S.key.free_model_daily_requests; return fr && fr.limit ? fr.limit : 50; }
+  if (p === "groq") return /8b|instant/.test(m) ? 14400 : 1000;
+  return /lite/.test(m) ? 1000 : 250;
+}
+const usedToday = (p, m) => { const r = S.G.req; return r.day === todayKey() && r.byModel ? r.byModel[p === "openrouter" ? p : p + "|" + m] || 0 : 0; };
+function route(task) {
+  const T = TASKS[task] || TASKS.scene, keyed = providerChain();
+  const order = S.G.smartRouting === false ? keyed : [...T.order.filter(p => keyed.includes(p)), ...keyed.filter(p => !T.order.includes(p))];
+  const slots = order.map(p => ({ p, m: taskModel(p, task) }));
+  const load = x => usedToday(x.p, x.m) / budget(x.p, x.m), resting = x => cooling(x.p, x.m) || BADKEY[x.p];
+  const fresh = slots.filter(x => !resting(x) && load(x) < 0.8), tired = slots.filter(x => !resting(x) && load(x) >= 0.8).sort((a, b) => load(a) - load(b));
+  return [...fresh, ...tired, ...slots.filter(resting)];   // resting ones are only tried when everything else failed
 }
 /* models that refused JSON mode or the reasoning hint once are not sent them again */
 const NOPARAM = LS.get("mc_noparam") || {};
@@ -675,8 +744,8 @@ function parseJSON(text) {
   for (const x of tries) { try { const o = JSON.parse(x); if (o && typeof o === "object") return o; } catch { } }
   return null;
 }
-async function callProvider(p, messages, maxTokens) {
-  const P = PROV[p], model = provModel(p), np = p + "|" + model;
+async function callProvider(p, messages, maxTokens, model = provModel(p)) {
+  const P = PROV[p], np = p + "|" + model;
   const body = { model, messages, temperature: 0.9, max_tokens: maxTokens };
   if (!NOPARAM[np + "|json"]) body.response_format = { type: "json_object" };   // valid JSON first time: no repair round-trips
   if (p === "gemini" && !NOPARAM[np + "|re"]) body.reasoning_effort = "low";    // keep "thinking" from eating the reply
@@ -684,45 +753,44 @@ async function callProvider(p, messages, maxTokens) {
   try { res = await fetch(P.url, { method: "POST", headers: { "Authorization": "Bearer " + S.G[P.keyF], "Content-Type": "application/json" }, body: JSON.stringify(body) }); }
   catch { throw { code: "network", p }; }
   const raw = await res.json().catch(() => null), data = Array.isArray(raw) ? raw[0] : raw, err = data && data.error;
-  countRequest(p);
+  countRequest(p, model);
   if (!res.ok || err) {
     const msg = String((err && (err.message || err.status)) || res.statusText || "");
-    if ((res.status === 400 || res.status === 404) && body.response_format && /response_format|json_object|json mode|requested parameters|structured/i.test(msg)) { NOPARAM[np + "|json"] = 1; LS.set("mc_noparam", NOPARAM); return callProvider(p, messages, maxTokens); }
-    if (res.status === 400 && body.reasoning_effort && /reasoning|thinking/i.test(msg)) { NOPARAM[np + "|re"] = 1; LS.set("mc_noparam", NOPARAM); return callProvider(p, messages, maxTokens); }
-    throw { code: (err && err.code) || res.status, status: res.status, message: msg, p };
+    if ((res.status === 400 || res.status === 404) && body.response_format && /response_format|json_object|json mode|requested parameters|structured/i.test(msg)) { NOPARAM[np + "|json"] = 1; LS.set("mc_noparam", NOPARAM); return callProvider(p, messages, maxTokens, model); }
+    if (res.status === 400 && body.reasoning_effort && /reasoning|thinking/i.test(msg)) { NOPARAM[np + "|re"] = 1; LS.set("mc_noparam", NOPARAM); return callProvider(p, messages, maxTokens, model); }
+    throw { code: (err && err.code) || res.status, status: res.status, message: msg, p, m: model };
   }
   const ch = data && data.choices && data.choices[0];
   if (ch && ch.error) throw { code: ch.error.code || "provider", message: ch.error.message, p };
   return (ch && ch.message && ch.message.content) || "";
 }
-async function ai(prompt, size) {
-  const chain = providerChain();
-  if (!chain.length) { openApi("Add a free AI key (OpenRouter, Groq or Gemini) to start playing."); throw { code: "nokey", quiet: true }; }
-  const maxT = size === "big" ? 5000 : 2200;
+/* task: "story" | "scene" | "chat" | "util" (see TASKS). Tries the routed providers in turn. */
+async function ai(prompt, task = "scene") {
+  if (task === "big") task = "story";
+  if (!providerChain().length) { openApi("Add a free AI key (OpenRouter, Groq or Gemini) to start playing."); throw { code: "nokey", quiet: true }; }
+  const maxT = (TASKS[task] || TASKS.scene).max;
   const msgs = [{ role: "system", content: SYS }, { role: "user", content: prompt }];
-  // providers that are resting go last: they are only tried when everything else failed
-  const rest = p => cooling(p) || BADKEY[p];
-  const order = [...chain.filter(p => !rest(p)), ...chain.filter(rest)];
   let lastErr = null;
   try {
-    for (const p of order) {
+    for (const { p, m } of route(task)) {
       try {
-        const text = await callProvider(p, msgs, maxT);
+        const text = await callProvider(p, msgs, maxT, m);
         let obj = parseJSON(text);
-        if (!obj) obj = parseJSON(await callProvider(p, [...msgs, { role: "assistant", content: String(text).slice(0, 4000) || "(empty)" }, { role: "user", content: "That was not a valid JSON object. Reply again with ONLY the JSON object, complete and valid." }], maxT));
-        if (!obj) throw { code: "badjson", p };
-        if (COOL[p]) { delete COOL[p]; LS.set("mc_cool", COOL); }
+        if (!obj) obj = parseJSON(await callProvider(p, [...msgs, { role: "assistant", content: String(text).slice(0, 4000) || "(empty)" }, { role: "user", content: "That was not a valid JSON object. Reply again with ONLY the JSON object, complete and valid." }], maxT, m));
+        if (!obj) throw { code: "badjson", p, m };
+        if (COOL[coolKey(p, m)]) { delete COOL[coolKey(p, m)]; LS.set("mc_cool", COOL); }
         delete BADKEY[p];
-        if (S.lastProv && S.lastProv !== p) toast(`Now using ${PROV[p].name}` + (cooling(S.lastProv) ? ` (${PROV[S.lastProv].name}'s free requests ran out)` : ""));
-        S.lastProv = p;
+        if (S.lastFail && S.lastFail !== p) toast(`Switched to ${PROV[p].name}` + (cooling(S.lastFail) ? ` (${PROV[S.lastFail].name}'s free requests ran out)` : ""));
+        S.lastFail = null; S.lastProv = p;
         return obj;
       } catch (e) {
         lastErr = e;
         if (e.code === "network") throw e;
+        S.lastFail = S.lastFail || p;
         const st = e.status;
-        if (st === 429 || st === 402) { coolDown(p, e); continue; }                       // out of free requests: next provider
+        if (st === 429 || st === 402) { coolDown(p, m, e); continue; }                       // out of free requests: next one
         if (st === 401 || st === 403 || (st === 400 && /api key/i.test(e.message || ""))) { e.badKey = BADKEY[p] = true; continue; }
-        if (st === 404 || st === 408 || st >= 500 || e.code === "provider" || e.code === "badjson") continue;   // that model is struggling: let another try
+        if (st === 404 || st === 408 || st === 413 || st >= 500 || e.code === "provider" || e.code === "badjson") continue;   // that model is struggling: let another try
         throw e;
       }
     }
@@ -740,7 +808,12 @@ function aiErr(e) {
   if (c === "badjson") return "The AI replied in the wrong format. Try again, or pick a stronger model.";
   return "AI error: " + ((e && e.message) || "unknown") + ". Try again.";
 }
-function countRequest(p) { const r = S.G.req; const t = todayKey(); if (r.day !== t) { r.day = t; r.n = 0; r.by = {}; } r.n++; r.by = r.by || {}; r.by[p] = (r.by[p] || 0) + 1; saveMeta(); }
+function countRequest(p, m) {
+  const r = S.G.req, t = todayKey(); if (r.day !== t) { r.day = t; r.n = 0; r.by = {}; r.byModel = {}; }
+  r.n++; r.by = r.by || {}; r.by[p] = (r.by[p] || 0) + 1;
+  r.byModel = r.byModel || {}; const k = p === "openrouter" ? p : p + "|" + m; r.byModel[k] = (r.byModel[k] || 0) + 1;
+  saveMeta();
+}
 /* Groq and Gemini model lists (need the key) */
 async function loadProvModels(p) {
   const P = PROV[p]; if (!P.list || !S.G[P.keyF]) return;
@@ -748,13 +821,14 @@ async function loadProvModels(p) {
   try {
     const r = await fetch(P.list, { headers: { "Authorization": "Bearer " + S.G[P.keyF] } });
     const raw = await r.json(), d = Array.isArray(raw) ? raw[0] : raw;
-    if (!r.ok || d.error) throw d.error || {};
+    if (!r.ok || d.error) throw d.error || { message: "HTTP " + r.status };
     let ids = (d.data || []).map(m => String(m.id).replace(/^models\//, ""));
     ids = p === "groq" ? ids.filter(x => !/whisper|tts|guard|playai|orpheus|compound|distil/i.test(x))
       : ids.filter(x => /gemini/i.test(x) && !/embed|image|tts|audio|live|vision|aqa|imagen|veo|robotics/i.test(x));
     S.pmodels[p] = ids.sort();
     if (!ids.includes(provModel(p)) || !S.G[P.modelF]) { S.G[P.modelF] = pickProvModel(p, ids) || PROV[p].def; saveMeta(); }
-  } catch (e) { S.pmodels[p] = []; }
+    (S.pmerr = S.pmerr || {})[p] = "";
+  } catch (e) { S.pmodels[p] = []; (S.pmerr = S.pmerr || {})[p] = String((e && e.message) || "").slice(0, 220); }
 }
 function pickProvModel(p, ids) {
   if (p === "groq") { for (const x of ["llama-3.3-70b-versatile", "openai/gpt-oss-120b", "moonshotai/kimi-k2", "meta-llama/llama-4-maverick", "qwen/qwen3-32b"]) { const m = ids.find(i => i.startsWith(x)); if (m) return m; } return ids[0]; }
@@ -801,7 +875,7 @@ function pickDefaultModel() {
 /* the "energy" bar: what is left on the OpenRouter key */
 function isFreeModel() { return /:free$/.test(S.G.model || "") || !!(S.models && S.models.some(m => m.id === S.G.model)); }
 function meterInfo() {
-  const k = S.key, chain = providerChain(), cur = chain.find(p => !cooling(p) && !BADKEY[p]) || chain[0];
+  const k = S.key, cur = (route("scene")[0] || {}).p;
   if (!cur) return { label: "Add key", title: "Add a free AI key" };
   if (cur !== "openrouter") { const n = S.G.req.day === todayKey() && S.G.req.by ? S.G.req.by[cur] || 0 : 0; return { label: PROV[cur].name, title: `Using ${PROV[cur].name} (${n} requests today)` }; }
   if (!k) return { label: "…", title: "Checking your key" };
@@ -814,17 +888,19 @@ function meterInfo() {
 function renderMeter() { document.querySelectorAll("[data-meter]").forEach(el => { const m = meterInfo(); el.lastChild.textContent = m.label; el.title = m.title; }); if (S.sheet && S.sheet.fn === sheetApi) refreshSheet(); }
 
 /* ================= prompt context ================= */
+const REALISM_RULE = "This world works like real life. Everyone knows the public facts about the player (family, relationships, reputation, things they did in public) and acts on them: family behaves like family and others treat the player by their family's name; friends defend them; rivals and enemies provoke them; people gossip and talk behind the player's back (subtweets, rumours that grow in the retelling, gossip pages), especially about the player's reputation, personality quirks and anything odd they do. First impressions come from reputation. Secrets stay secret until something reveals them. People remember, and everyone's knowledge stays consistent.";
 const LANG_RULE = "Write ALL in-world text in natural, casual English, the way people really post and text (lowercase vibes, slang, emoji where it fits). Every character keeps their own distinct voice.";
 const IMG_RULE = `Photos: about 1 in 3 posts by characters or random accounts include a photo. For a photo post set "image" to a vivid description of the picture itself (subject, outfit, setting, lighting, camera angle) in under 30 words. Never put names of real people or copyrighted characters in "image"; describe how they look instead. Posts without a photo use "image": null.`;
 function charLine(c) {
-  return `- ${c.name} (@${c.handle})${c.kind === "news" ? " [news/gossip account]" : ""}: ${String(c.desc || c.bio || "").slice(0, 420)}${c.look ? " | looks: " + c.look : ""} | relationship with player: ${Math.round(num(c.rel))}/100${c.chem ? ", dynamic: " + c.chem : ""}${c.followsMe ? ", follows player" : ""}`;
+  return `- ${c.name} (@${c.handle})${c.mem && c.mem.length ? " [remembers about the player: " + c.mem.slice(-4).join("; ") + "]" : ""}${c.kind === "news" ? " [news/gossip account]" : ""}: ${String(c.desc || c.bio || "").slice(0, 420)}${c.look ? " | looks: " + c.look : ""} | relationship with player: ${Math.round(num(c.rel))}/100${c.chem ? ", dynamic: " + c.chem : ""}${c.followsMe ? ", follows player" : ""}`;
 }
 function postLine(W, p) { return `@${handleOf(W, p.a)}: ${String(p.t).slice(0, 160)}${p.img ? " [photo: " + String(p.img.d).slice(0, 80) + "]" : ""}`; }
 function ctx(W, opts = {}) {
   const me = W.me;
   const chars = W.chars.filter(c => c.unlocked || c.kind === "news");
   const recent = W.posts.slice(0, opts.posts ?? 8).map(p => postLine(W, p)).join("\n");
-  const mem = W.log.slice(-25).map(l => "- " + l).join("\n");
+  const mem = W.log.slice(W.summary ? -12 : -25).map(l => "- " + l).join("\n");
+  const ties = (W.ties || []).map(t => { const a = W.chars.find(c => c.id === t.a), b = W.chars.find(c => c.id === t.b); return a && b ? `- ${a.name} & ${b.name}: ${t.type}${t.secret ? " (SECRET: only they know)" : ""}${t.note ? " — " + t.note : ""}` : ""; }).filter(Boolean).slice(-20).join("\n");
   const npcs = Object.values(W.npcs || {}).sort((a, b) => b.seen - a.seen).slice(0, opts.npcs ?? 14).map(n => `- @${n.h} (${n.n})${n.bio ? ": " + n.bio : ""}`).join("\n");
   return `WORLD: ${W.name} — ${W.desc}
 FANDOM/SETTING: ${W.fandom || W.name}
@@ -832,10 +908,11 @@ ${W.sandbox || W.lore ? "CANON & LORE (follow strictly):\n" + (W.sandbox ? sandb
 IN-WORLD DAY: ${W.day}${W.calendar ? " (" + dateLabel(W) + ")" : ""}
 PLAYER: ${me.name} (@${me.handle}). Bio: ${me.bio || "-"}. Vibe: ${me.vibe || "-"}. ${me.look ? "Looks: " + me.look + ". " : ""}Followers ${me.followers}, humor ${Math.round(me.humor)}, aura ${Math.round(me.aura)}, level ${me.level}.
 PLAYER GOAL: ${me.goal || "-"}
+${(me.bonds || []).length ? "PLAYER'S RELATIONSHIPS (facts of this world):\n" + me.bonds.map(b => `- ${b.name}: ${b.type}${b.secret ? " — SECRET: only the player and " + b.name + " know; nobody else acts on it unless it comes out" : " — everyone knows"}${b.note ? ". " + b.note : ""}`).join("\n") + "\n" : ""}${(me.rep || []).length ? "WHAT PEOPLE SAY ABOUT THE PLAYER (their reputation): " + me.rep.join("; ") + "\n" : ""}REALISM: ${REALISM_RULE}
 PLAYER SKILLS: ${me.skills.map(s => `${s.name} lv${s.lv}`).join(", ")}
 CHARACTERS IN THE PLAYER'S CIRCLE:
 ${chars.map(charLine).join("\n") || "-"}
-STORY MEMORY (oldest first):
+${ties ? "RELATIONSHIPS BETWEEN CHARACTERS (they act on these and have their own drama, with or without the player):\n" + ties + "\n" : ""}${W.summary ? "STORY SO FAR: " + W.summary + "\nRECENT EVENTS (oldest first):" : "STORY MEMORY (oldest first):"}
 ${mem || "- (the story just started)"}
 RECURRING ACCOUNTS (random people already in this world):
 ${npcs || "- (none yet)"}
@@ -1024,7 +1101,7 @@ window.imgFail = function (el) {
 };
 /* ================= game rules ================= */
 const xpNeed = lv => 60 + lv * 40;
-function notify(k, t, ref) { const W = S.W; if (!W) return; W.notifs.unshift({ id: uid("n"), k, t, ts: Date.now(), read: false, ref: ref || null }); }
+function notify(k, t, ref, at) { const W = S.W; if (!W) return; W.notifs.unshift({ id: uid("n"), k, t, ts: at || Date.now(), read: false, ref: ref || null }); W.notifs.sort((a, b) => b.ts - a.ts); }
 function remember(line) { if (line && S.W) S.W.log.push(`[day ${S.W.day}] ${String(line).slice(0, 220)}`); }
 function isBusy() { return !!S.busy || Object.values(S.typing).some(Boolean) || !!(S.W && S.W.act && S.W.act.busy); }
 /* one AI action at a time: overlapping actions share the snapshot stack and could undo each other */
@@ -1091,12 +1168,65 @@ function addPosts(list, tag) {
     if (!x || !x.text) continue;
     const a = authorFrom(W, x.handle, x.name, x);
     const base = typeof a === "string" ? (W.chars.find(c => c.id === a)?.followers || 500) : rnd(50, 3000);
-    const p = { id: uid("p"), a, t: String(x.text), img: mkImg(x.image, x.image_tags), day: W.day, ts: Date.now() + made.length, likes: Math.round(base * (0.01 + Math.random() * 0.08)), rts: rnd(0, 40), views: Math.round(base * (0.3 + Math.random() * 1.5)), replies: [], tag: tag || null };
+    const p = { id: uid("p"), a, t: String(x.text), img: mkImg(x.image, x.image_tags), day: W.day, ts: Date.now() + made.length, quoteOf: null, likes: Math.round(base * (0.01 + Math.random() * 0.08)), rts: rnd(0, 40), views: Math.round(base * (0.3 + Math.random() * 1.5)), replies: [], tag: tag || null };
     W.posts.unshift(p); made.push(p);
+    if (Array.isArray(x.replies) && x.replies.length) addThreadReplies(W, p, x.replies.map(y => Object.assign({}, y, { reply_to: y && y.reply_to && String(y.reply_to).startsWith("@") ? y.reply_to : "post" })), {}, null, 4, 40);
   }
   return made;
 }
-function pushDM(cid, f, t) { const W = S.W; (W.dms[cid] || (W.dms[cid] = [])).push({ f, t, day: W.day, ts: Date.now() }); }
+/* ---- X-style threads: every reply points at what it answers (r.to = reply id, or null = the post) ---- */
+const replyById = (p, id) => id ? p.replies.find(r => r.id === id) : null;
+const kidsOf = (p, id) => p.replies.filter(r => (r.to || null) === (id || null));
+function descCount(p, id) { let n = 0; for (const k of kidsOf(p, id)) n += 1 + descCount(p, k.id); return n; }
+const parentHandle = (W, p, r) => { const par = replyById(p, r.to); return handleOf(W, par ? par.a : p.a); };
+function ancestorsOf(p, r) { const out = []; let cur = replyById(p, r && r.to); while (cur && out.length < 30) { out.unshift(cur); cur = replyById(p, cur.to); } return out; }
+/* numbered transcript of a thread for the AI: [#n] @who (replying to @x): text */
+function threadForAI(W, p, focusId) {
+  const path = focusId ? [...ancestorsOf(p, replyById(p, focusId)), replyById(p, focusId)] : [];
+  const pick = [...new Set([...path, ...p.replies.slice(-14)])].filter(Boolean).sort((a, b) => a.ts - b.ts);
+  const idx = {}; pick.forEach((r, i) => idx["#" + (i + 1)] = r.id);
+  const lines = pick.map((r, i) => `[#${i + 1}] @${handleOf(W, r.a)} (replying to @${parentHandle(W, p, r)}): ${String(r.t).slice(0, 220)}`).join("\n");
+  return { lines, idx, num: id => { const k = Object.keys(idx).find(k => idx[k] === id); return k || null; } };
+}
+/* turn the AI's reply list into thread replies; reply_to may be "#n", "#me", "post", or "@handle" of an earlier reply */
+function addThreadReplies(W, p, list, idx = {}, mineId = null, max = 6, likesMax = 60) {
+  const made = [];
+  for (const x of (Array.isArray(list) ? list : []).slice(0, max)) {
+    if (!x || !x.text) continue;
+    const rt = String(x.reply_to || "").trim(); let to = null;
+    if (/^#me$/i.test(rt)) to = mineId;
+    else if (idx[rt]) to = idx[rt];
+    else if (rt.startsWith("@")) { const h = rt.slice(1).toLowerCase(); const hit = [...made, ...p.replies].reverse().find(r => handleOf(W, r.a).toLowerCase() === h); to = hit ? hit.id : mineId; }
+    else if (/^(post|null)?$/i.test(rt)) to = rt ? null : mineId;
+    const r = { id: uid("r"), a: authorFrom(W, x.handle, x.name, x), t: String(x.text), likes: rnd(0, likesMax), ts: Date.now() + made.length, to };
+    p.replies.push(r); made.push(r);
+  }
+  return made;
+}
+/* tell the player about replies to them */
+function notifyReplies(W, p, made) {
+  for (const r of made) { const par = replyById(p, r.to); if ((par && par.a === "me") || (!par && p.a === "me" && !r.bulk)) { const A = authorInfo(W, r.a); notify("reply", `${A.name} replied to you: “${String(r.t).slice(0, 60)}”`, { post: p.id, focus: r.id }); } }
+}
+function pushDM(cid, f, t, at) { const W = S.W; (W.dms[cid] || (W.dms[cid] = [])).push({ f, t, day: W.day, ts: at || Date.now() }); }
+/* who's online: each character keeps their own hours (some are night owls) and drifts on and off */
+function presence(c) {
+  const h = new Date().getHours(), owl = hashN(c.id) % 3 === 0;
+  const awake = owl ? (h >= 18 || h < 3) : (h >= 7 && h < 23);
+  const slot = Math.floor(Date.now() / 6e5), on = awake && hashN(c.id + ":" + slot) % 10 < 6;
+  return { on, ago: on ? 0 : 3 + hashN(c.id + "#" + slot) % (awake ? 50 : 420) };
+}
+const agoLabel = m => m < 60 ? m + "m" : Math.round(m / 60) + "h";
+/* when their reply lands: quick if they're online, later if not (messages wait, hidden, until then) */
+const replyDelay = c => presence(c).on ? rnd(1500, 4500) : rnd(15000, 60000);
+const shown = m => m.ts <= Date.now();
+/* re-draw when a delayed message arrives */
+setInterval(() => {
+  const W = S.W; if (!W) return;
+  const now = Date.now(), last = S.lastTick || now; S.lastTick = now;
+  const due = x => x.ts > last && x.ts <= now;
+  const any = Object.values(W.dms).some(l => l.some(due)) || (W.groups || []).some(g => g.msgs.some(due)) || W.notifs.some(due);
+  if (any && !S.sheet) render();
+}, 1000);
 function proactiveDM(dm) {
   if (!dm || !dm.text) return;
   const W = S.W;
@@ -1141,13 +1271,14 @@ function checkAch() {
 }
 
 /* ================= AI actions ================= */
-const REPLY_SHAPE = `{"handle":"@handle of a listed character, a recurring account, or a NEW account","name":"display name","text":"reply text","bio":"NEW accounts only","pic":"NEW accounts only"}`;
+const REPLY_SHAPE = `{"handle":"@handle of a listed character, a recurring account, or a NEW account","name":"display name","text":"reply text","reply_to":"what it answers (see THREAD RULES)","bio":"NEW accounts only","pic":"NEW accounts only"}`;
+const THREAD_RULE = `THREAD RULES (like real X): replies form threads. Each reply's "reply_to" says what it answers. People answer the post, but they also reply to each other: agree, argue, dunk, joke, correct, gang up, defend the player. Characters behave according to their relationships with each other.`;
 const POST_SHAPE = `{"handle":"@handle","name":"display name","text":"post text","image":"photo description or null","image_tags":"2-3 word photo-search phrase for that photo, or null","bio":"NEW accounts only","pic":"NEW accounts only"}`;
 const DM_SHAPE = `{"handle":"@listed character, or a random/recurring account who would slide into the player's DMs","name":"display name","bio":"NEW accounts only","pic":"NEW accounts only","text":"private message to the player"}`;
 const CROWD_RULE = `RANDOM ACCOUNTS: most of the crowd are random accounts who belong in this world and care about the topic at hand. Each one has ONE clear identity: handle, display name, bio, profile picture and posts all match (e.g. someone obsessed with magical plants posts as @magical_plant_freak, bio "my mandrakes are my children", pic "bonsai tree"). When the player posts about something, people who care about it show up. Reuse RECURRING ACCOUNTS when they fit and keep them consistent; invent new ones when the topic calls for it. For every NEW account give "bio" (max 80 chars) and "pic" (their profile picture as a 2-4 word photo-search phrase naming one real object, animal or place that fits them, e.g. "bonsai tree", "black kitten", "old cauldron", "owl at night"; never a person or a name). Canon or listed characters never need bio or pic.`;
 function failed(e) { const m = aiErr(e); if (m) toast(m); }
 
-async function makePost(text, photo) {
+async function makePost(text, photo, quoteId) {
   const W = S.W, me = W.me;
   if (!text.trim() && !photo) return;
   if (guard()) return;
@@ -1155,6 +1286,7 @@ async function makePost(text, photo) {
   const useClout = S.view.boostClout && me.boosts.clout > 0;
   snapshot();
   const p = { id: uid("p"), a: "me", t: text.trim(), img: mkImg(photo), day: W.day, ts: Date.now(), likes: 0, rts: 0, views: 0, replies: [], pending: true };
+  const qp = quoteId && W.posts.find(x => x.id === quoteId); if (qp) p.q = qp.id;
   W.posts.unshift(p);
   if (useViral) me.boosts.viral--; if (useClout) me.boosts.clout--;
   S.view.boostViral = S.view.boostClout = false;
@@ -1162,7 +1294,7 @@ async function makePost(text, photo) {
   const prompt = `${ctx(W)}
 
 THE PLAYER JUST POSTED:
-"${p.t}"${p.img ? `\nwith a photo: ${p.img.d}` : ""}
+"${p.t}"${p.img ? `\nwith a photo: ${p.img.d}` : ""}${qp ? `\nIt QUOTES this post by @${handleOf(W, qp.a)}: "${String(qp.t).slice(0, 240)}" (the quoted person and their friends will likely react)` : ""}
 ${useViral ? "VIRAL BOOST ACTIVE: this post must blow up (outcome viral, huge reach) unless it is truly offensive.\n" : ""}${useClout ? "CLOUT BOOST ACTIVE: more characters notice, follower gain is bigger.\n" : ""}
 Simulate how this world reacts, like a real Twitter/X timeline. Judge the post honestly: funny or clever posts gain humor; confident, mysterious, cool or iconic posts gain aura; cringe, rude or controversial posts can flop or get the player cancelled, more often at higher drama levels. Characters react according to their personality and their relationship with the player. Random accounts are fans, haters, stans, meme pages and lurkers.
 Scale the numbers to the player's ${me.followers} followers: a normal post gets views about 0.5-3x followers and likes about 2-15% of views; viral gets 10-60x views; a flop gets very little.
@@ -1178,22 +1310,26 @@ Reply with ONLY this JSON:
 "character_posts":[${POST_SHAPE}],
 "news_post":${POST_SHAPE} or null,
 "dm":${DM_SHAPE} or null,
+"reputation":"a short new thing people now say about the player because of this, or null",
+${MEM_SHAPE},
 "memory":"one sentence recording what happened"}
 ${CROWD_RULE}
-Rules: 3-7 replies, mostly random accounts (recurring or new) plus listed characters who would plausibly see it. humor_change and aura_change between -10 and 10. relationship change between -15 and 15. character_posts 0-2 (only listed characters). dm only if it really fits.`;
+${THREAD_RULE} Here "reply_to" is "post" (answers the player's post) or "@handle" of an earlier reply in your list (a reply to that reply).
+Rules: 3-7 replies, mostly random accounts (recurring or new) plus listed characters who would plausibly see it; at least one should answer another reply. humor_change and aura_change between -10 and 10. relationship change between -15 and 15. character_posts 0-2 (only listed characters). dm only if it really fits.`;
   try {
-    const r = await ai(prompt);
+    const r = await ai(prompt, "scene");
     const out = ["viral", "flop", "drama", "cancelled"].includes(r.outcome) ? r.outcome : "normal";
     p.pending = false;
     p.likes = Math.max(0, Math.round(num(r.likes))); p.rts = Math.max(0, Math.round(num(r.reposts))); p.views = Math.max(p.likes, Math.round(num(r.views)));
     if (out !== "normal") p.tag = out;
-    for (const x of (r.replies || []).slice(0, 8)) if (x && x.text) p.replies.push({ id: uid("r"), a: authorFrom(W, x.handle, x.name, x), t: String(x.text), likes: rnd(0, Math.max(3, p.likes / 8)), ts: Date.now() });
+    const madeR = addThreadReplies(W, p, (r.replies || []).map(x => Object.assign({}, x, { reply_to: x && x.reply_to && String(x.reply_to).startsWith("@") ? x.reply_to : "post" })), {}, null, 8, Math.max(3, p.likes / 8));
+    for (const x of madeR) { const par = replyById(p, x.to); if (par && par.a === "me") notifyReplies(W, p, [x]); }
     const d = applyStats(r, useClout ? 2 : 1);
     const rels = applyRels(r.relationship_changes);
     addPosts(r.character_posts);
     if (r.news_post && !W.muteNews) addPosts([r.news_post], "news");
     proactiveDM(r.dm);
-    remember(r.memory || `${me.name} posted: ${p.t.slice(0, 80)}`);
+    remember(r.memory || `${me.name} posted: ${p.t.slice(0, 80)}`); addRep(r.reputation); applyCharMem(r.character_memories);
     S.G.stats.posts++; if (out === "viral") S.G.stats.virals++; if (out === "cancelled") S.G.stats.cancels++;
     addXP(out === "viral" ? 35 : 20);
     if (p.replies.length) notify("reply", `${p.replies.length} people replied to your post`, { post: p.id });
@@ -1206,36 +1342,70 @@ Rules: 3-7 replies, mostly random accounts (recurring or new) plus listed charac
   } finally { setBusy(null); render(); }
 }
 
-async function makeReply(postId, text) {
+async function makeReply(postId, text, toId) {
   const W = S.W, p = W.posts.find(x => x.id === postId); if (!p || !text.trim() || guard()) return;
   snapshot();
-  const mine = { id: uid("r"), a: "me", t: text.trim(), likes: 0, ts: Date.now() };
+  const target = replyById(p, toId);
+  const T = threadForAI(W, p, target && target.id);
+  const mine = { id: uid("r"), a: "me", t: text.trim(), likes: 0, ts: Date.now(), to: target ? target.id : null };
   p.replies.push(mine);
   setBusy("Waiting for replies…"); render();
-  const thread = p.replies.slice(-10).map(r => `@${handleOf(W, r.a)}: ${String(r.t).slice(0, 200)}`).join("\n");
   const prompt = `${ctx(W, { posts: 4 })}
 
 THREAD — original post by @${handleOf(W, p.a)}:
 "${String(p.t).slice(0, 400)}"${p.img ? `\n[photo: ${p.img.d}]` : ""}
 Replies so far (oldest first):
-${thread}
+${T.lines || "(none)"}
 
-The player (@${W.me.handle}) just replied: "${mine.t}"
-Simulate 1-4 follow-up replies in this thread (the original poster usually answers; others may pile on).
+The player (@${W.me.handle}) just replied [#me] to ${target ? `${T.num(target.id)} (@${handleOf(W, target.a)})` : "the original post"}: "${mine.t}"
+Simulate 1-4 follow-up replies. Whoever the player answered usually responds; others may pile on, take sides or start their own side-arguments.
+${THREAD_RULE} Here "reply_to" is "#me" (the player's new reply), "#n" (a listed reply), "post", or "@handle" of an earlier reply in your list.
 ${CROWD_RULE}
 Reply with ONLY this JSON:
 {"replies":[${REPLY_SHAPE}],"likes_on_player_reply":0,"humor_change":0,"aura_change":0,"followers_change":0,
-"relationship_changes":[{"handle":"@...","change":0,"reason":"short"}],"memory":"one sentence, or empty if nothing notable"}`;
+"relationship_changes":[{"handle":"@...","change":0,"reason":"short"}],
+"character_memories":[{"handle":"@listed character","note":"one short thing they now remember about the player"}],
+"memory":"one sentence, or empty if nothing notable"}`;
   try {
-    const r = await ai(prompt);
+    const r = await ai(prompt, "scene");
     const live = S.W.posts.find(x => x.id === postId);
     const me2 = live.replies.find(x => x.id === mine.id); if (me2) me2.likes = Math.max(0, Math.round(num(r.likes_on_player_reply)));
-    for (const x of (r.replies || []).slice(0, 5)) if (x && x.text) live.replies.push({ id: uid("r"), a: authorFrom(S.W, x.handle, x.name, x), t: String(x.text), likes: rnd(0, 60), ts: Date.now() });
+    const made = addThreadReplies(S.W, live, r.replies, T.idx, mine.id, 5);
+    notifyReplies(S.W, live, made);
     const d = applyStats(r); const rels = applyRels(r.relationship_changes);
+    applyCharMem(r.character_memories);
     if (r.memory) remember(r.memory);
     addXP(10); checkAch(); saveWorld();
     if (Object.keys(d).length || rels.length) showOutcome("mini", null, d, rels);
   } catch (e) { restoreSnap(); failed(e); S.view.replyDraft = text; }
+  finally { setBusy(null); render(); }
+}
+/* "Load more replies": the thread keeps going on its own (people reply to the post and to each other) */
+async function moreReplies(postId, focusId) {
+  const W = S.W, p = W.posts.find(x => x.id === postId); if (!p || guard()) return;
+  snapshot();
+  const T = threadForAI(W, p, focusId);
+  setBusy("Loading more replies…"); render();
+  const prompt = `${ctx(W, { posts: 3 })}
+
+THREAD — original post by @${handleOf(W, p.a)}:
+"${String(p.t).slice(0, 400)}"${p.img ? `\n[photo: ${p.img.d}]` : ""}
+Replies so far (oldest first):
+${T.lines || "(none)"}
+
+The conversation keeps going without the player: write 2-5 new replies${focusId ? ` mostly under ${T.num(focusId)}` : ""}. People answer the post and each other (and may answer the player's replies).
+${THREAD_RULE} Here "reply_to" is "#n" (a listed reply), "post", or "@handle" of an earlier reply in your list.
+${CROWD_RULE}
+Reply with ONLY this JSON: {"replies":[${REPLY_SHAPE}],"memory":"one sentence, or empty"}`;
+  try {
+    const r = await ai(prompt, "scene");
+    const live = S.W.posts.find(x => x.id === postId);
+    const made = addThreadReplies(S.W, live, (r.replies || []).map(x => Object.assign({}, x, { reply_to: x && x.reply_to ? x.reply_to : "post" })), T.idx, null, 5);
+    made.forEach(x => x.bulk = true); notifyReplies(S.W, live, made); made.forEach(x => delete x.bulk);
+    if (r.memory) remember(r.memory);
+    saveWorld();
+    if (!made.length) toast("No one else had anything to say");
+  } catch (e) { restoreSnap(); failed(e); }
   finally { setBusy(null); render(); }
 }
 
@@ -1256,21 +1426,23 @@ ${hist}
 
 Write ${c.name}'s reply like a real person texting: short bubbles, their own voice; they can be moody, flirty, petty, sweet or busy. They may leave the chat ("brb", go offline, stop replying) when it fits, or leave the message on read (empty messages array) if it deserves that.
 Reply with ONLY this JSON:
-{"messages":["bubble 1","bubble 2"],"leaves":false,"relationship_change":0,"chemistry":"new relationship dynamic label if it clearly changed, else empty","memory":"one sentence if something important happened, else empty"}
+{"messages":["bubble 1","bubble 2"],"leaves":false,"relationship_change":0,"chemistry":"new relationship dynamic label if it clearly changed, else empty","they_remember":"one short thing ${c.name} will remember about the player from this chat, or empty","memory":"one sentence if something important happened, else empty"}
 messages: 0-4 short bubbles. relationship_change between -10 and 10.`;
   try {
-    const r = await ai(prompt);
+    const r = await ai(prompt, "chat");
     const msgs = (Array.isArray(r.messages) ? r.messages : []).filter(Boolean).slice(0, 4);
     const Wl = S.W, cl = Wl.chars.find(x => x.id === cid);
+    let at = Date.now() + replyDelay(cl);
+    Wl.dmMeta[cid].readAt = at - rnd(800, 2500);   // "Read" shows when they open it, not instantly
     Wl.dmMeta[cid].read = true;
-    // stay "typing" (and busy) until the last bubble lands
-    for (let i = 0; i < msgs.length; i++) { await sleep(i ? 650 : 250); pushDM(cid, "them", String(msgs[i])); render(); }
-    if (r.leaves) { pushDM(cid, "sys", `${cl.name} left the chat`); Wl.dmMeta[cid].left = true; }
+    for (let i = 0; i < msgs.length; i++) { pushDM(cid, "them", String(msgs[i]), at); at += rnd(900, 2600); }
+    if (msgs.length && S.view.dm !== cid) notify("dm", `${cl.name}: ${String(msgs[0]).slice(0, 60)}`, { dm: cid }, Wl.dms[cid][Wl.dms[cid].length - msgs.length].ts);
+    if (r.leaves) { pushDM(cid, "sys", `${cl.name} left the chat`, at); Wl.dmMeta[cid].left = true; }
     else if (msgs.length) Wl.dmMeta[cid].left = false;
     cl.rel = clamp(num(cl.rel) + clamp(Math.round(num(r.relationship_change)), -10, 10), -100, 100);
     if (r.chemistry && typeof r.chemistry === "string" && r.chemistry.length < 30 && r.chemistry !== cl.chem) { cl.chem = r.chemistry; pushDM(cid, "sys", `You and ${cl.name} are now: ${cl.chem}`); }
+    if (r.they_remember) applyCharMem([{ handle: cl.handle, note: r.they_remember }]);
     if (r.memory) remember(r.memory);
-    Wl.dmRead[cid] = Date.now();
     addXP(5); checkAch(); saveWorld();
   } catch (e) { S.typing[cid] = false; restoreSnap(); failed(e); S.view.dmDraft = text; }
   finally { S.typing[cid] = false; render(); }
@@ -1283,6 +1455,8 @@ async function nextDay(opts = {}) {
   const step = opts.opening ? 0 : 1;   // the opening scene stays on day 1
   setBusy(opts.opening ? "Setting the opening scene…" : opts.chapter ? "Starting a new chapter…" : `Starting day ${W.day + 1}…`); render();
   const locked = W.chars.filter(c => !c.unlocked && c.kind !== "news").map(c => c.name).join(", ");
+  const needSummary = W.summary ? W.log.length > 22 : W.log.length > 16;   // fold old memory into "the story so far" (keeps prompts short)
+  const gossipDay = !opts.opening && (W.day + step) % 7 === 0;
   const prompt = `${ctx(W)}
 People who exist in this world but are not in the player's circle yet: ${locked || "-"}
 
@@ -1291,8 +1465,8 @@ ${opts.opening ? `THE STORY BEGINS (day 1). Set the opening scene for the story 
   : `A NEW IN-WORLD DAY begins: day ${W.day + 1}${W.calendar ? ` (${dateLabel(W, W.day + 1)}). Any canon events dated between ${dateLabel(W)} and ${dateLabel(W, W.day + 1)} happen now unless the player's actions changed them` : ""}. Advance the story: what are people posting today, what drama or opportunities show up around the player? Keep threads from the story memory going (consequences of the player's past actions) and add fresh hooks. The drama level sets how chaotic it gets.`}
 ${IMG_RULE}
 Reply with ONLY this JSON:
-{"character_posts":[${POST_SHAPE}],
-"random_posts":[${POST_SHAPE}],
+{"character_posts":[${POST_SHAPE.slice(0, -1)},"replies":[${REPLY_SHAPE}]}],
+"random_posts":[${POST_SHAPE.slice(0, -1)},"replies":[${REPLY_SHAPE}]}],
 "news_post":${POST_SHAPE} or null,
 "stories":[{"handle":"@listed character","text":"short story caption","image":"photo description or null","image_tags":"2-3 word photo-search phrase or null"}],
 "events":[{"title":"short event title","desc":"2-3 sentences: the situation the player is in","choices":["choice 1","choice 2","choice 3"]}],
@@ -1300,8 +1474,17 @@ Reply with ONLY this JSON:
 "dm":${DM_SHAPE} or null,
 "trends":["#trend1","#trend2","#trend3","#trend4"],
 "followers_change":0,
+"reputation":"a short new thing people now say about the player, or null",
+${MEM_SHAPE},
+"new_ties":[{"a":"@character","b":"@character","type":"short label, e.g. Dating, Broke up, Rivals, Secret alliance","note":"short","secret":false}],
+"secret_out":"if a secret of the player's comes out today, the name of the person it involves, else null",${needSummary ? `
+"story_so_far":"rewrite the WHOLE story so far in 6-9 sentences: who the player is now, key relationships, reputation, open plotlines and secrets",` : ""}
 "memory":"one sentence: the headline of this day"}
 ${CROWD_RULE}
+CHARACTERS HAVE THEIR OWN LIVES: relationships between characters evolve and cause drama even without the player (new couples, break-ups, feuds, alliances). "new_ties" lists 0-1 such changes, only when today's story clearly creates one.
+SECRETS: at drama level 3+ a secret (the player's or between characters) may start leaking as a rumour when the story makes it plausible; whoever is involved reacts. Don't force it.${gossipDay ? `
+WEEKLY GOSSIP ROUNDUP: today the gossip or news account's "news_post" is a roundup of the week's rumours about the player and their circle.` : ""}
+${THREAD_RULE} For posts made today, "replies" are 0-3 replies each; "reply_to" is "post" or "@handle" of an earlier reply under the same post.
 Counts: character_posts 2-4 (listed characters only), random_posts 3-5 (recurring or new random accounts), stories 1-3 (most stories have an image), events exactly 2. Use null where nothing fits.`;
   try {
     const r = await ai(prompt, "big");
@@ -1314,7 +1497,9 @@ Counts: character_posts 2-4 (listed characters only), random_posts 3-5 (recurrin
     proactiveDM(r.dm);
     if (Array.isArray(r.trends)) W.trends = r.trends.slice(0, 5).map(String);
     applyStats(r);
-    remember(r.memory || "A new day started");
+    remember(r.memory || "A new day started"); addRep(r.reputation);
+    applyCharMem(r.character_memories); applyTies(r.new_ties); applySecretOut(r.secret_out);
+    if (needSummary && typeof r.story_so_far === "string" && r.story_so_far.length > 80) { W.summary = r.story_so_far.slice(0, 1600); W.log = W.log.slice(-10); }
     if ((r.events || []).length) notify("event", `Day ${W.day}: ${r.events.length} new events are waiting in Explore`);
     checkAch(); saveWorld();
     S.view.tab = "feed"; S.view.post = null;
@@ -1339,16 +1524,19 @@ Reply with ONLY this JSON:
 "followers_change":0,"humor_change":0,"aura_change":0,
 "relationship_changes":[{"handle":"@...","change":0,"reason":"short"}],
 "posts":[${POST_SHAPE}],
+"reputation":"a short new thing people now say about the player because of this, or null",
+${MEM_SHAPE},
+"secret_out":"if a secret of the player's comes out because of this, the name of the person it involves, else null",
 "memory":"one sentence"}
 posts: 1-3 (listed characters, recurring or new random accounts).
 ${CROWD_RULE}`;
   try {
-    const r = await ai(prompt);
+    const r = await ai(prompt, "scene");
     const live = S.W.events.find(e => e.id === eid);
     live.done = true; live.choice = choice.trim(); live.result = String(r.result || r.headline || "");
     const d = applyStats(r); const rels = applyRels(r.relationship_changes);
     addPosts(r.posts, ["viral", "cancelled", "drama"].includes(r.outcome) ? r.outcome : null);
-    remember(r.memory || `${W.me.name} chose "${choice}" during "${ev.title}"`);
+    remember(r.memory || `${W.me.name} chose "${choice}" during "${ev.title}"`); addRep(r.reputation); applyCharMem(r.character_memories); applySecretOut(r.secret_out);
     S.G.stats.events++; if (r.outcome === "viral") S.G.stats.virals++; if (r.outcome === "cancelled") S.G.stats.cancels++;
     addXP(30); checkAch(); saveWorld();
     showOutcome(r.outcome || "normal", r.headline, d, rels);
@@ -1371,7 +1559,7 @@ Character card: ${c.desc || c.bio}. Relationship ${Math.round(c.rel)}/100${c.che
 Reply with ONLY this JSON:
 {"title":"scene title","narration":"2-3 sentences setting the scene, second person","line":"${c.name}'s first spoken line","options":["something the player could do or say","another","another"]}`;
   try {
-    const r = await ai(prompt);
+    const r = await ai(prompt, "chat");
     Object.assign(S.W.act, { title: String(r.title || title), options: (r.options || []).slice(0, 3).map(String), busy: false });
     if (r.narration) S.W.act.lines.push({ k: "narr", t: String(r.narration) });
     if (r.line) S.W.act.lines.push({ k: "char", t: String(r.line) });
@@ -1399,7 +1587,7 @@ Reply with ONLY this JSON:
 {"narration":"1-3 sentences, second person","line":"${c.name}'s spoken line (can be empty)","options":["next player option","another","another"],"relationship_change":0,"done":false,"summary":"if done: one sentence summary for story memory, else empty"}
 relationship_change between -8 and 8.`;
   try {
-    const r = await ai(prompt);
+    const r = await ai(prompt, "chat");
     if (r.narration) A.lines.push({ k: "narr", t: String(r.narration) });
     if (r.line) A.lines.push({ k: "char", t: String(r.line) });
     c.rel = clamp(num(c.rel) + clamp(Math.round(num(r.relationship_change)), -8, 8), -100, 100);
@@ -1442,7 +1630,7 @@ function addCustomToWorld(libId) {
 /* ================= rendering ================= */
 const app = $("#app");
 const scrollMem = {};
-function viewKey() { const v = S.view; return v.screen === "home" ? "home" : v.post ? "post:" + v.post : v.dm ? "dm:" + v.dm : "tab:" + v.tab; }
+function viewKey() { const v = S.view; return v.screen === "home" ? "home" : v.post ? "post:" + v.post + ":" + (v.focus || "") : v.dm ? "dm:" + v.dm : v.group ? "group:" + v.group : "tab:" + v.tab; }
 function render() {
   const sc = $(".scroll", app); if (sc) scrollMem[S.lastKey] = sc.scrollTop;
   const ae = document.activeElement, aeId = ae && ae.id && app.contains(ae) ? ae.id : null;
@@ -1450,7 +1638,7 @@ function render() {
   app.innerHTML = S.view.screen === "home" || !S.W ? renderHome() : renderWorld();
   const key = viewKey(); S.lastKey = key;
   const sc2 = $(".scroll", app);
-  if (sc2) { if (S.view.dm && S.stickBottom !== false) sc2.scrollTop = sc2.scrollHeight; else sc2.scrollTop = scrollMem[key] || 0; }
+  if (sc2) { if ((S.view.dm || S.view.group) && S.stickBottom !== false) sc2.scrollTop = sc2.scrollHeight; else sc2.scrollTop = scrollMem[key] || 0; }
   if (aeId) { const el = document.getElementById(aeId); if (el) { el.focus({ preventScroll: true }); if (sel) try { el.setSelectionRange(sel[0], sel[1]); } catch { } } }
   autoGrow();
 }
@@ -1510,18 +1698,19 @@ function renderHome() {
 }
 
 /* ---------- world shell ---------- */
-function unreadDMs(W) { return W.chars.filter(c => c.unlocked && c.kind !== "news" && (W.dms[c.id] || []).some(m => m.f === "them" && m.ts > num(W.dmRead[c.id]))).length; }
+function unreadDMs(W) { return W.chars.filter(c => c.unlocked && c.kind !== "news" && (W.dms[c.id] || []).some(m => m.f === "them" && shown(m) && m.ts > num(W.dmRead[c.id]))).length + (W.groups || []).filter(g => g.msgs.some(m => m.f !== "me" && m.f !== "sys" && shown(m) && m.ts > num(g.read))).length; }
 function renderWorld() {
   const W = S.W, v = S.view;
-  const unN = W.notifs.filter(n => !n.read).length, unD = unreadDMs(W);
+  const unN = W.notifs.filter(n => !n.read && shown(n)).length, unD = unreadDMs(W);
   let body;
   if (v.post) body = viewThread();
   else if (v.dm) body = viewChat();
+  else if (v.group) body = viewGroup();
   else body = ({ feed: viewFeed, explore: viewExplore, dms: viewDMs, notifs: viewNotifs, profile: viewProfile }[v.tab] || viewFeed)();
-  const tab = (id, icon, label, n) => `<button data-act="tab" data-id="${id}" ${v.tab === id && !v.post && !v.dm ? 'aria-current="page"' : ""}>${ic(icon)}${n ? `<span class="dot num">${n > 9 ? "9+" : n}</span>` : ""}<span>${label}</span></button>`;
+  const tab = (id, icon, label, n) => `<button data-act="tab" data-id="${id}" ${v.tab === id && !v.post && !v.dm && !v.group ? 'aria-current="page"' : ""}>${ic(icon)}${n ? `<span class="dot num">${n > 9 ? "9+" : n}</span>` : ""}<span>${label}</span></button>`;
   return `
   <header class="top gut"><div class="row" style="gap:6px">
-    <button class="iconbtn" data-act="${v.post || v.dm ? "back" : "home"}" aria-label="Back">${ic("back")}</button>
+    <button class="iconbtn" data-act="${v.post || v.dm || v.group ? "back" : "home"}" aria-label="Back">${ic("back")}</button>
     <div class="grow" style="line-height:1.2">
       <div style="font-family:var(--font-display);font-size:17px" class="ell">${esc(W.emoji)} ${esc(W.name)}</div>
       <div class="tiny muted ell">Day ${W.day} · ${esc(W.calendar ? dateLabel(W) : W.sandbox ? eraLabel(W.sandbox) + " · " + W.sandbox.place : MADNESS[W.madness])}</div>
@@ -1551,6 +1740,7 @@ function postHTML(p) {
       <div class="who"><span class="name">${esc(A.name)}</span>${A.verified ? badge() : ""}<span class="handle">@${esc(A.handle)} · day ${p.day}</span></div>
       ${p.t ? `<div class="text">${esc(p.t)}</div>` : ""}
       ${photoHTML(p.img)}
+      ${quoteHTML(p)}
       ${p.pending ? `<div class="tiny muted" style="margin-top:6px">Posting…</div>` : ""}
       ${tg ? `<span class="tag ${tg[0]}">${tg[1]}</span>` : ""}
       <div class="acts num">
@@ -1560,6 +1750,34 @@ function postHTML(p) {
         <span style="display:inline-flex;align-items:center;gap:5px">${ic("views")}${fmt(p.views)}</span>
       </div>
     </div></article>`;
+}
+
+function quoteHTML(p) {
+  const W = S.W, q = p.q && W.posts.find(x => x.id === p.q); if (!p.q) return "";
+  if (!q) return `<div class="quote small muted">This post is unavailable</div>`;
+  const A = authorInfo(W, q.a);
+  return `<div class="quote" data-act="openPost" data-id="${esc(q.id)}"><div class="row" style="gap:6px">${avatar(A.av, A.key, "xs")}<b class="small ell">${esc(A.name)}</b><span class="tiny muted ell">@${esc(A.handle)}</span></div><div class="small" style="margin-top:4px;white-space:pre-wrap">${esc(String(q.t).slice(0, 280))}</div></div>`;
+}
+/* one reply row; `line` draws the thread connector down to the next reply */
+function replyHTML(p, r, o = {}) {
+  const W = S.W, R = authorInfo(W, r.a), kids = kidsOf(p, r.id).length;
+  return `<div class="post gut reply${o.line ? " has-line" : ""}${o.big ? " focus" : ""}" data-act="openReply" data-post="${esc(p.id)}" data-id="${esc(r.id)}">
+    <div class="avcol"><div data-act="profileOf" data-a="${esc(profA(R))}">${avatar(R.av, R.key, o.big ? "" : "sm", R.kind === "news" ? "news" : "")}</div>${o.line ? '<span class="tline"></span>' : ""}</div>
+    <div class="grow"><div class="who"><span class="name">${esc(R.name)}</span>${R.verified ? badge() : ""}<span class="handle">@${esc(R.handle)}</span></div>
+      <div class="small muted">Replying to <span style="color:var(--blue)">@${esc(parentHandle(W, p, r))}</span></div>
+      <div class="text"${o.big ? ' style="font-size:17px"' : ""}>${esc(r.t)}</div>
+      <div class="acts num" style="max-width:260px">
+        <button data-act="replyTo" data-post="${esc(p.id)}" data-id="${esc(r.id)}" aria-label="Reply">${ic("reply")}${kids ? fmt(kids) : ""}</button>
+        <button data-act="likeReply" data-post="${esc(p.id)}" data-id="${esc(r.id)}" class="${r.liked ? "on-like" : ""}" aria-label="Like">${ic("heart")}${fmt(r.likes)}</button>
+      </div></div></div>`;
+}
+/* a reply and the start of its own thread (follows the player's branch first) */
+function chainHTML(p, top, depth = 2) {
+  const chain = [top]; let cur = top;
+  while (chain.length <= depth) { const k = kidsOf(p, cur.id); if (!k.length) break; cur = k.find(x => x.a === "me") || k.find(x => kidsOf(p, x.id).some(y => y.a === "me")) || k[0]; chain.push(cur); }
+  const hidden = descCount(p, top.id) - (chain.length - 1);
+  return chain.map((r, i) => replyHTML(p, r, { line: i < chain.length - 1 })).join("")
+    + (hidden > 0 ? `<button class="morelink gut" data-act="openReply" data-post="${esc(p.id)}" data-id="${esc(top.id)}">Show ${hidden} more repl${hidden === 1 ? "y" : "ies"}</button>` : "");
 }
 
 /* ---------- feed ---------- */
@@ -1581,13 +1799,14 @@ function viewFeed() {
       <div class="grow">
         <label for="composer" class="sr">New post</label>
         <textarea id="composer" data-grow data-draft="draft" placeholder="What's happening?" maxlength="600">${esc(v.draft || "")}</textarea>
+        ${v.quote && W.posts.find(x => x.id === v.quote) ? `<div class="row" style="align-items:flex-start;gap:6px"><div class="grow">${quoteHTML({ q: v.quote })}</div><button class="iconbtn" data-act="quoteOff" aria-label="Remove quote">${ic("x")}</button></div>` : ""}
         ${v.photoOpen ? `<div class="row" style="margin-top:6px"><label for="photoIn" class="sr">Describe your photo</label><input class="in" id="photoIn" data-draft="photoDraft" maxlength="200" placeholder="Describe your photo (e.g. mirror selfie in a red jacket)" value="${esc(v.photoDraft || "")}"><button class="iconbtn" data-act="photoToggle" aria-label="Remove photo">${ic("x")}</button></div>` : ""}
         <div class="bar">
           <button class="boost" data-act="photoToggle" aria-pressed="${!!v.photoOpen}">📷 Photo</button>
           <button class="boost" data-act="boost" data-id="viral" aria-pressed="${!!v.boostViral}" ${me.boosts.viral ? "" : "disabled style='opacity:.5'"}>🚀 Viral ×${me.boosts.viral}</button>
           <button class="boost" data-act="boost" data-id="clout" aria-pressed="${!!v.boostClout}" ${me.boosts.clout ? "" : "disabled style='opacity:.5'"}>📣 Clout ×${me.boosts.clout}</button>
           <span class="grow"></span>
-          <button class="btn accent sm" data-act="post" ${isBusy() ? "disabled" : ""}>Post</button>
+          <button class="btn accent sm" data-act="post" ${isBusy() ? "disabled" : ""}>${v.quote ? "Quote" : "Post"}</button>
         </div>
       </div>
     </div>
@@ -1600,35 +1819,51 @@ function viewFeed() {
 function viewThread() {
   const W = S.W, p = W.posts.find(x => x.id === S.view.post);
   if (!p) { S.view.post = null; return viewFeed(); }
-  const A = authorInfo(W, p.a), tg = p.tag && TAGS[p.tag];
-  return `<main class="scroll">
-    ${busyBar()}
-    <div class="thread-main gut">
+  const A = authorInfo(W, p.a), tg = p.tag && TAGS[p.tag], v = S.view;
+  const focus = replyById(p, v.focus); if (v.focus && !focus) v.focus = null;
+  const target = replyById(p, v.replyTo) || focus;
+  const mainPost = `<div class="thread-main gut">
       <div class="row" data-act="profileOf" data-a="${esc(profA(A))}" style="cursor:pointer">${avatar(A.av, A.key, "", A.kind === "news" ? "news" : "")}
         <div class="grow"><div class="row" style="gap:5px"><b class="ell">${esc(A.name)}</b>${A.verified ? badge() : ""}</div><div class="small muted">@${esc(A.handle)}</div></div></div>
       ${p.t ? `<div class="text">${esc(p.t)}</div>` : ""}
       ${photoHTML(p.img)}
+      ${quoteHTML(p)}
       ${tg ? `<span class="tag ${tg[0]}">${tg[1]}</span>` : ""}
       <div class="small muted" style="margin-top:10px">Day ${p.day} · ${esc(W.name)}</div>
     </div>
-    <div class="stats gut num"><span><b>${fmt(p.rts)}</b> Reposts</span><span><b>${fmt(p.likes)}</b> Likes</span><span><b>${fmt(p.views)}</b> Views</span></div>
+    <div class="stats gut num"><span><b>${fmt(p.replies.length)}</b> Replies</span><span><b>${fmt(p.rts)}</b> Reposts</span><span><b>${fmt(p.likes)}</b> Likes</span><span><b>${fmt(p.views)}</b> Views</span></div>
     <div class="actbar gut">
-      <button data-act="focusReply">${ic("reply")}Reply</button>
+      <button data-act="replyTo" data-post="${esc(p.id)}" data-id="">${ic("reply")}Reply</button>
       <button data-act="rt" data-id="${esc(p.id)}" class="${p.rted ? "on-rt" : ""}">${ic("rt")}Repost</button>
       <button data-act="like" data-id="${esc(p.id)}" class="${p.liked ? "on-like" : ""}">${ic("heart")}Like</button>
-    </div>
-    ${p.replies.map(r => { const R = authorInfo(W, r.a); return `<div class="post gut" style="cursor:default">
-      <div data-act="profileOf" data-a="${esc(profA(R))}" style="cursor:pointer">${avatar(R.av, R.key, "sm", R.kind === "news" ? "news" : "")}</div>
-      <div class="grow"><div class="who"><span class="name">${esc(R.name)}</span>${R.verified ? badge() : ""}<span class="handle">@${esc(R.handle)}</span></div>
-      <div class="small muted">Replying to @${esc(A.handle)}</div>
-      <div class="text">${esc(r.t)}</div>
-      <div class="acts num" style="max-width:120px"><span style="display:inline-flex;gap:5px;align-items:center">${ic("heart")}${fmt(r.likes)}</span></div></div></div>`; }).join("")}
+    </div>`;
+  let body;
+  if (focus) {
+    // a reply opened on its own: the conversation above it, then it, then its replies
+    const up = ancestorsOf(p, focus);
+    body = `<button class="morelink gut" data-act="openPost" data-id="${esc(p.id)}">↑ Show the original post</button>
+      <div class="post gut reply has-line" data-act="openPost" data-id="${esc(p.id)}"><div class="avcol">${avatar(A.av, A.key, "sm")}<span class="tline"></span></div><div class="grow"><div class="who"><span class="name">${esc(A.name)}</span><span class="handle">@${esc(A.handle)}</span></div><div class="text">${esc(String(p.t).slice(0, 280))}</div></div></div>
+      ${up.map(r => replyHTML(p, r, { line: true })).join("")}
+      ${replyHTML(p, focus, { big: true })}
+      ${kidsOf(p, focus.id).map(k => chainHTML(p, k, 1)).join("")}`;
+  } else {
+    const tops = kidsOf(p, null).sort((a, b) => (b.a === "me") - (a.a === "me") || a.ts - b.ts);
+    body = mainPost + tops.map(t => chainHTML(p, t)).join("");
+  }
+  return `<main class="scroll">
+    ${busyBar()}
+    ${body}
     ${p.pending || p.replies.length ? "" : `<div class="tiny muted gut" style="padding-block:14px;text-align:center">No replies yet</div>`}
+    ${p.pending ? "" : `<button class="morelink gut" data-act="moreReplies" data-post="${esc(p.id)}" data-id="${esc(focus ? focus.id : "")}" ${isBusy() ? "disabled" : ""}>✨ Load more replies <span class="tiny muted">(1 AI request)</span></button>`}
+    <div style="height:20px"></div>
   </main>
-  <div class="replybox gut">
-    <label for="replyIn" class="sr">Reply</label>
-    <textarea id="replyIn" data-grow data-draft="replyDraft" rows="1" placeholder="Post your reply" maxlength="400">${esc(S.view.replyDraft || "")}</textarea>
-    <button class="send" data-act="reply" data-id="${esc(p.id)}" aria-label="Send" ${isBusy() ? "disabled" : ""}>${ic("send", 2.4)}</button>
+  <div class="replybox gut" style="flex-direction:column;align-items:stretch;gap:6px">
+    <div class="tiny muted row" style="gap:6px">Replying to <span style="color:var(--blue)">@${esc(target ? handleOf(W, target.a) : A.handle)}</span>${v.replyTo ? `<button class="linkbtn" data-act="replyTo" data-post="${esc(p.id)}" data-id="">✕</button>` : ""}</div>
+    <div class="row" style="align-items:flex-end;gap:10px">
+      <label for="replyIn" class="sr">Reply</label>
+      <textarea id="replyIn" data-grow data-draft="replyDraft" rows="1" placeholder="Post your reply" maxlength="400">${esc(v.replyDraft || "")}</textarea>
+      <button class="send" data-act="reply" data-id="${esc(p.id)}" aria-label="Send" ${isBusy() ? "disabled" : ""}>${ic("send", 2.4)}</button>
+    </div>
   </div>`;
 }
 /* ---------- explore: day, trends, events, invites, activities ---------- */
@@ -1685,13 +1920,21 @@ function viewExplore() {
 /* ---------- DMs ---------- */
 function viewDMs() {
   const W = S.W;
-  const list = W.chars.filter(c => c.unlocked && c.kind !== "news").map(c => { const m = W.dms[c.id] || []; return { c, last: m[m.length - 1] }; }).sort((a, b) => num(b.last?.ts) - num(a.last?.ts));
+  const list = W.chars.filter(c => c.unlocked && c.kind !== "news").map(c => { const m = (W.dms[c.id] || []).filter(shown); return { c, last: m[m.length - 1] }; }).sort((a, b) => num(b.last?.ts) - num(a.last?.ts));
+  const groups = (W.groups || []).map(g => { const m = g.msgs.filter(shown); return { g, last: m[m.length - 1] }; }).sort((a, b) => num(b.last?.ts) - num(a.last?.ts));
   return `<main class="scroll dmlist">
     ${keyNotice()}
-    <div class="gut row" style="padding-block:14px 4px"><h3 class="grow" style="font-size:20px">Messages</h3><button class="btn sm soft" data-act="addChar">${ic("plus")} New</button></div>
-    ${list.map(({ c, last }) => { const un = (W.dms[c.id] || []).some(m => m.f === "them" && m.ts > num(W.dmRead[c.id])); return `
+    <div class="gut row" style="padding-block:14px 4px"><h3 class="grow" style="font-size:20px">Messages</h3><button class="btn sm soft" data-act="newGroup">👥 Group</button><button class="btn sm soft" data-act="addChar">${ic("plus")} New</button></div>
+    ${groups.map(({ g, last }) => { const un = g.msgs.some(m => m.f !== "me" && m.f !== "sys" && shown(m) && m.ts > num(g.read)); const who = last && last.f !== "me" && last.f !== "sys" ? (W.chars.find(x => x.id === last.f) || {}).name : ""; return `
+      <div class="item gut" data-act="openGroup" data-id="${esc(g.id)}" role="button" tabindex="0">
+        <div class="av" style="${avStyle(null, g.id)}"><span>👥</span></div>
+        <div class="grow"><div class="row" style="gap:6px"><b class="ell">${esc(g.name)}</b><span class="tiny muted">· ${g.members.length + 1} people</span></div>
+        <div class="small ${un ? "" : "muted"} ell" style="${un ? "font-weight:600" : ""}">${last ? (last.f === "me" ? "You: " : who ? esc(who.split(" ")[0]) + ": " : "") + esc(last.t) : "Say hi to the group"}</div></div>
+        ${un ? '<span class="unread"></span>' : ""}
+      </div>`; }).join("")}
+    ${list.map(({ c, last }) => { const un = (W.dms[c.id] || []).some(m => m.f === "them" && shown(m) && m.ts > num(W.dmRead[c.id])); return `
       <div class="item gut" data-act="openDM" data-id="${esc(c.id)}" role="button" tabindex="0">
-        ${avatar(c.av, c.id)}
+        <div style="position:relative">${avatar(c.av, c.id)}${presence(c).on ? '<span class="online"></span>' : ""}</div>
         <div class="grow"><div class="row" style="gap:6px"><b class="ell">${esc(c.name)}</b>${c.chem ? `<span class="tiny muted ell">· ${esc(c.chem)}</span>` : ""}</div>
         <div class="small ${un ? "" : "muted"} ell" style="${un ? "font-weight:600" : ""}">${last ? (last.f === "me" ? "You: " : "") + esc(last.t) : "Say hi"}</div></div>
         ${un ? '<span class="unread"></span>' : ""}
@@ -1704,22 +1947,23 @@ function viewChat() {
   const W = S.W, c = W.chars.find(x => x.id === S.view.dm);
   if (!c) { S.view.dm = null; return viewDMs(); }
   W.dmRead[c.id] = Date.now();
-  const msgs = W.dms[c.id] || [];
+  const all = W.dms[c.id] || [], msgs = all.filter(shown), pend = all.find(m => !shown(m)), pr = presence(c);
+  const writing = S.typing[c.id] || (pend && (pr.on || pend.ts - Date.now() < 6000));
   let out = "", lastDay = null;
   const lastMe = msgs.map(m => m.f).lastIndexOf("me");
   msgs.forEach((m, i) => {
     if (m.day !== lastDay) { out += `<div class="daysep">Day ${m.day}</div>`; lastDay = m.day; }
     out += `<div class="bub ${m.f}">${esc(m.t)}</div>`;
-    if (i === lastMe && i === msgs.length - 1 && !S.typing[c.id] && W.dmMeta[c.id]?.read) out += `<div class="receipt">Read</div>`;
+    if (i === lastMe && i === msgs.length - 1 && !S.typing[c.id]) out += `<div class="receipt">${W.dmMeta[c.id]?.read && num(W.dmMeta[c.id].readAt) <= Date.now() ? "Read" : "Delivered"}</div>`;
   });
   return `<div class="gut" style="padding-block:10px;border-bottom:1px solid var(--line)">
       <div class="row" data-act="profileOf" data-a="${esc(c.id)}" style="cursor:pointer">${avatar(c.av, c.id, "sm")}
         <div class="grow"><div class="row" style="gap:5px"><b class="ell">${esc(c.name)}</b>${num(c.followers) >= 10000 ? badge() : ""}</div>
-        <div class="tiny muted">${c.chem ? esc(c.chem) + " · " : ""}relationship ${Math.round(c.rel)}</div></div>
+        <div class="tiny muted">${pr.on ? '<span style="color:var(--good)">● Active now</span>' : `Active ${agoLabel(pr.ago)} ago`} · ${c.chem ? esc(c.chem) + " · " : ""}relationship ${Math.round(c.rel)}</div></div>
         <div style="width:80px">${relBar(c.rel)}</div></div></div>
     <main class="scroll"><div class="chat gut">
       ${out || `<div class="bub sys">Start a conversation with ${esc(c.name)}</div>`}
-      ${S.typing[c.id] ? `<div class="typing" aria-label="typing"><i></i><i></i><i></i></div>` : ""}
+      ${writing ? `<div class="typing" aria-label="typing"><i></i><i></i><i></i></div>` : ""}
     </div></main>
     <div class="replybox gut">
       <label for="dmIn" class="sr">Message</label>
@@ -1728,14 +1972,87 @@ function viewChat() {
     </div>`;
 }
 
+/* ---------- group chats ---------- */
+function viewGroup() {
+  const W = S.W, g = (W.groups || []).find(x => x.id === S.view.group);
+  if (!g) { S.view.group = null; return viewDMs(); }
+  g.read = Date.now();
+  const all = g.msgs, msgs = all.filter(shown), pend = all.find(m => !shown(m));
+  const writer = pend && W.chars.find(x => x.id === pend.f);
+  const members = g.members.map(id => W.chars.find(c => c.id === id)).filter(Boolean);
+  let out = "", lastDay = null, prev = null;
+  for (const m of msgs) {
+    if (m.day !== lastDay) { out += `<div class="daysep">Day ${m.day}</div>`; lastDay = m.day; prev = null; }
+    if (m.f === "me" || m.f === "sys") out += `<div class="bub ${m.f}">${esc(m.t)}</div>`;
+    else {
+      const c = W.chars.find(x => x.id === m.f) || { name: "someone", av: { e: "🙂" }, id: m.f };
+      if (prev !== m.f) out += `<div class="gname">${esc(c.name)}</div>`;
+      out += `<div class="grow-msg">${prev !== m.f ? avatar(c.av, c.id, "xs") : '<span style="width:26px;flex:none"></span>'}<div class="bub them">${esc(m.t)}</div></div>`;
+    }
+    prev = m.f;
+  }
+  return `<div class="gut" style="padding-block:10px;border-bottom:1px solid var(--line)">
+      <div class="row" data-act="groupInfo" style="cursor:pointer"><div class="av sm" style="${avStyle(null, g.id)}"><span>👥</span></div>
+        <div class="grow"><b class="ell">${esc(g.name)}</b><div class="tiny muted ell">You, ${members.map(c => esc(c.name.split(" ")[0])).join(", ")}</div></div></div></div>
+    <main class="scroll"><div class="chat gut">
+      ${out || `<div class="bub sys">Say hi to ${esc(g.name)}</div>`}
+      ${S.typing["g:" + g.id] || (pend && pend.ts - Date.now() < 6000) ? `<div class="tiny muted" style="margin-left:4px">${writer ? esc(writer.name.split(" ")[0]) + " is typing…" : "typing…"}</div><div class="typing" aria-label="typing"><i></i><i></i><i></i></div>` : ""}
+    </div></main>
+    <div class="replybox gut">
+      <label for="gIn" class="sr">Message</label>
+      <textarea id="gIn" data-grow data-draft="gDraft" rows="1" placeholder="Message ${esc(g.name)}" maxlength="500">${esc(S.view.gDraft || "")}</textarea>
+      <button class="send" data-act="sendGroup" data-id="${esc(g.id)}" aria-label="Send" ${isBusy() ? "disabled" : ""}>${ic("send", 2.4)}</button>
+    </div>`;
+}
+function sheetNewGroup() {
+  const W = S.W, f = S.newGroup, circle = W.chars.filter(c => c.unlocked && c.kind !== "news"), edit = !!f.id;
+  return head(edit ? "Group info" : "New group chat") + `<div class="sh-body"><div class="col gut" style="gap:14px">
+    <div class="field"><label for="ngName">Group name</label><input class="in" id="ngName" data-ng="name" maxlength="40" value="${esc(f.name)}" placeholder="e.g. Slytherin 5th years, the Marauders"></div>
+    <div class="field"><label>Members (at least 2)</label>
+      ${circle.length ? circle.map(c => `<label class="row" style="cursor:pointer;gap:10px"><input type="checkbox" data-ngm="${esc(c.id)}" ${f.members.includes(c.id) ? "checked" : ""} style="width:20px;height:20px;accent-color:var(--accent)">${avatar(c.av, c.id, "xs")}<span class="grow">${esc(c.name)}</span></label>`).join("") : `<div class="small muted">Add people to your circle first.</div>`}</div>
+    <button class="btn accent" data-act="groupSave">${edit ? "Save" : "Create group"}</button>
+    ${edit ? `<button class="btn ghost" data-act="groupLeave" style="color:var(--bad)">Leave &amp; delete group</button>` : ""}
+  </div></div>`;
+}
+async function sendGroup(gid, text) {
+  const W = S.W, g = (W.groups || []).find(x => x.id === gid); if (!g || !text.trim() || guard()) return;
+  snapshot();
+  g.msgs.push({ f: "me", t: text.trim(), day: W.day, ts: Date.now() });
+  S.typing["g:" + gid] = true; render();
+  const members = g.members.map(id => W.chars.find(c => c.id === id)).filter(Boolean);
+  const hist = g.msgs.slice(-24).map(m => m.f === "me" ? `${W.me.name}: ${m.t}` : m.f === "sys" ? `(${m.t})` : `${(W.chars.find(c => c.id === m.f) || {}).name || "someone"}: ${m.t}`).join("\n");
+  const prompt = `${ctx(W, { posts: 3 })}
+
+GROUP CHAT "${g.name}" between the player ${W.me.name} and: ${members.map(c => `${c.name} (@${c.handle})`).join(", ")}.
+Chat history (oldest first):
+${hist}
+
+Write what happens next in the group chat, like a real group chat: 1-5 short messages from different members (never the player), each in their own voice. They react to the player AND to each other: banter, teasing, inside jokes, arguing, taking sides, side-conversations. Members who wouldn't care can stay quiet.
+Reply with ONLY this JSON:
+{"messages":[{"handle":"@member","text":"message"}],"relationship_changes":[{"handle":"@...","change":0,"reason":"short"}],${MEM_SHAPE},"memory":"one sentence if something important happened, else empty"}`;
+  try {
+    const r = await ai(prompt, "chat");
+    const Wl = S.W, gl = Wl.groups.find(x => x.id === gid);
+    let at = Date.now() + rnd(1500, 5000);
+    for (const m of (Array.isArray(r.messages) ? r.messages : []).slice(0, 5)) {
+      const c = m && m.text && findCharByHandle(Wl, m.handle); if (!c || !gl.members.includes(c.id)) continue;
+      gl.msgs.push({ f: c.id, t: String(m.text), day: Wl.day, ts: at }); at += rnd(1200, 4000);
+    }
+    applyRels(r.relationship_changes); applyCharMem(r.character_memories);
+    if (r.memory) remember(r.memory);
+    addXP(5); checkAch(); saveWorld();
+  } catch (e) { S.typing["g:" + gid] = false; restoreSnap(); failed(e); S.view.gDraft = text; }
+  finally { S.typing["g:" + gid] = false; render(); }
+}
+
 /* ---------- notifications ---------- */
-const NIC = { like: "❤️", reply: "💬", follow: "👤", dm: "✉️", level: "⬆️", milestone: "🏁", event: "🎭", ach: "🏆", news: "📰" };
+const NIC = { rep: "🗣️", like: "❤️", reply: "💬", follow: "👤", dm: "✉️", level: "⬆️", milestone: "🏁", event: "🎭", ach: "🏆", news: "📰" };
 function viewNotifs() {
   const W = S.W;
-  const html = W.notifs.map(n => `<div class="post gut" style="${n.read ? "" : "background:color-mix(in srgb,var(--accent-soft) 45%,transparent)"}" data-act="notif" data-id="${esc(n.id)}">
+  const html = W.notifs.filter(shown).map(n => `<div class="post gut" style="${n.read ? "" : "background:color-mix(in srgb,var(--accent-soft) 45%,transparent)"}" data-act="notif" data-id="${esc(n.id)}">
     <div style="width:34px;text-align:center;font-size:20px">${NIC[n.k] || "🔔"}</div>
     <div class="grow"><div>${esc(n.t)}</div><div class="tiny muted">${new Date(n.ts).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}</div></div></div>`).join("");
-  setTimeout(() => { if (S.W === W && S.view.tab === "notifs" && W.notifs.some(n => !n.read)) { W.notifs.forEach(n => n.read = true); saveWorld(); } }, 1500);
+  setTimeout(() => { if (S.W === W && S.view.tab === "notifs" && W.notifs.some(n => !n.read && shown(n))) { W.notifs.forEach(n => { if (shown(n)) n.read = true; }); saveWorld(); } }, 1500);
   return `<main class="scroll"><div class="gut" style="padding-block:14px 4px"><h3 style="font-size:20px">Activity</h3></div>${html || `<div class="empty"><div class="em">🔔</div>Nothing new yet</div>`}</main>`;
 }
 
@@ -1768,6 +2085,17 @@ function viewProfile() {
     <section class="sec gut">
       <div class="row"><h3 class="grow" style="margin:0">Goal</h3><button class="btn ghost sm" data-act="editGoal">${ic("edit")} Edit</button></div>
       <p style="margin:6px 0 0">${esc(me.goal || "-")}</p>
+    </section>
+    <section class="sec gut">
+      <h3 style="margin:0 0 4px">Relationships</h3>
+      <div class="tiny muted" style="margin-bottom:6px">Facts of your world. Everyone acts on them unless they're secret.</div>
+      ${bondForm("pb", me.bonds || [], W.chars.filter(c => c.kind !== "news").map(c => c.name))}
+    </section>
+    <section class="sec gut">
+      <h3 style="margin:0 0 4px">What people say about you</h3>
+      <div class="tiny muted" style="margin-bottom:8px">Your reputation. People gossip about it, and it changes with what you do.</div>
+      ${(me.rep || []).length ? `<div class="row wrap" style="gap:6px">${me.rep.map((t, i) => `<span class="chip" style="font-size:13px">🗣️ ${esc(t)}<button data-act="repDel" data-id="${i}" aria-label="Remove" style="display:inline-flex;margin-left:2px">${ic("x")}</button></span>`).join("")}</div>` : `<div class="small muted">Nothing yet.</div>`}
+      <div class="row" style="margin-top:8px"><input class="in" id="repIn" maxlength="120" placeholder="Add something people say, e.g. a little unhinged"><button class="btn sm soft" data-act="repAdd">Add</button></div>
     </section>
     <section class="sec gut">
       <div class="row"><h3 class="grow" style="margin:0">Skills</h3><span class="pill hot num">${me.sp} skill point${me.sp === 1 ? "" : "s"}</span></div>
@@ -1808,6 +2136,14 @@ function viewProfile() {
     ${myPosts.map(postHTML).join("") || `<div class="empty">No posts yet</div>`}
     <div style="height:30px"></div>
   </main>`;
+}
+
+function sheetRepost() {
+  const p = S.W.posts.find(x => x.id === S.rtPost); if (!p) return head("");
+  return head("Repost") + `<div class="sh-body"><div class="col gut" style="gap:10px">
+    <button class="btn soft" data-act="repost" data-id="${esc(p.id)}">${ic("rt")} ${p.rted ? "Undo repost" : "Repost"}</button>
+    <button class="btn soft" data-act="quote" data-id="${esc(p.id)}">${ic("edit")} Quote</button>
+  </div></div>`;
 }
 
 /* ---------- toast & outcome ---------- */
@@ -1856,7 +2192,7 @@ function provStatus(p) {
   const G = S.G, n = G.req.day === todayKey() && G.req.by ? G.req.by[p] || 0 : 0;
   if (!G[PROV[p].keyF]) return `<span class="muted">Not added</span>`;
   if (BADKEY[p]) return `<span style="color:var(--bad)">Key rejected · check it</span>`;
-  if (cooling(p)) { const u = new Date(COOL[p].until); return `<span style="color:var(--gold)">Out of free requests · back ${COOL[p].daily ? "at " + u.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "in a minute"}</span>`; }
+  if (cooling(p)) { const c = COOL[coolKey(p)], u = new Date(c.until); return `<span style="color:var(--gold)">Out of free requests · back ${c.daily ? "at " + u.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "in a minute"}</span>`; }
   return `<span style="color:var(--good)">Ready</span><span class="muted"> · ${n} request${n === 1 ? "" : "s"} today</span>`;
 }
 function provCard(p) {
@@ -1869,7 +2205,7 @@ function provCard(p) {
     <div class="tiny muted">Get a free key at <a href="${P.keyUrl}" target="_blank" rel="noopener">${P.keyUrl.replace("https://", "")}</a>. It stays in this browser and is sent only to ${P.name}.</div>
     ${key ? `<div class="field"><label for="${p}ModelSel">Model</label>
       ${list && list.length ? `<select class="in" id="${p}ModelSel" data-act-change="provModel" data-p="${p}">${list.includes(m) ? "" : `<option value="${esc(m)}" selected>${esc(m)}</option>`}${list.map(x => `<option value="${esc(x)}" ${x === m ? "selected" : ""}>${esc(x)}</option>`).join("")}</select>`
-        : list ? `<div class="small" style="color:var(--bad)">Couldn't load ${P.name}'s models. Check the key.</div>` : `<div class="thinking"><span class="spin"></span>Loading models…</div>`}</div>
+        : list ? `<div class="small" style="color:var(--bad)">${P.name} didn't accept this key${S.pmerr && S.pmerr[p] ? `: “${esc(S.pmerr[p])}”` : ". Check it."}</div>` : `<div class="thinking"><span class="spin"></span>Loading models…</div>`}</div>
       <button class="btn sm ghost" style="align-self:flex-start;color:var(--bad)" data-act="provKeyRemove" data-p="${p}">Remove key</button>` : ""}
   </div>`;
 }
@@ -1908,6 +2244,11 @@ function sheetApi() {
     </div>
     ${provCard("groq")}
     ${provCard("gemini")}
+    <div class="card col" style="gap:8px">
+      <label class="row" style="cursor:pointer"><div class="grow"><b>Smart routing</b><div class="small muted">Give each kind of job to the AI that suits it and spread the work so no free quota runs out first.</div></div><input type="checkbox" id="smartTog" ${S.G.smartRouting !== false ? "checked" : ""} style="width:22px;height:22px;accent-color:var(--accent)"></label>
+      ${hasAI() ? `<div class="col" style="gap:6px">${Object.entries(TASKS).map(([k, T]) => { const r = route(k)[0]; return `<div class="row small"><span class="grow">${T.label}</span><b class="tiny" style="text-align:right">${r ? esc(PROV[r.p].name) + (r.m !== provModel(r.p) ? " · " + esc(r.m) : "") : "-"}</b></div>`; }).join("")}</div>
+      <div class="tiny muted">Groq and Gemini count limits per model, so small helpers use a lighter model with its own, much bigger quota.</div>` : ""}
+    </div>
     <div class="tiny muted num">Requests sent from this app today: ${G.req.day === todayKey() ? G.req.n : 0}${G.req.day === todayKey() && G.req.by ? " (" + PROV_IDS.filter(x => G.req.by[x]).map(x => PROV[x].name + " " + G.req.by[x]).join(", ") + ")" : ""}</div>
   </div></div>`;
 }
@@ -2149,7 +2490,7 @@ function cwWizarding() {
   if (c.era === "custom" && !String(c.eraText || "").trim()) return toast("Describe your custom era first");
   c.handle = cleanHandle(c.handle || c.name) || "wizard" + rnd(100, 999);
   const W = buildWizardingWorld(c);
-  S.W = W; S.G.worlds.push(worldIndex(W));
+  S.W = W; startBonds(W, c); S.G.worlds.push(worldIndex(W));
   S.snaps = []; S.view = { screen: "world", tab: "feed", post: null, dm: null };
   saveWorld(); flushWorld(); closeLayer(); render();
   toast("Welcome to the Wizarding World 🪄");
@@ -2201,7 +2542,11 @@ function sheetEditChar() {
     <div class="field"><label for="ecHandle">Username (@)</label><input class="in" id="ecHandle" data-ec="handle" maxlength="24" value="${esc(f.handle)}"></div>
     <div class="field"><label for="ecBio">Bio</label><input class="in" id="ecBio" data-ec="bio" maxlength="160" value="${esc(f.bio)}"></div>
     <div class="field"><label for="ecDesc">Personality, voice &amp; secrets (the AI plays them from this)</label><textarea class="in" id="ecDesc" data-ec="desc" maxlength="1500" style="min-height:120px">${esc(f.desc)}</textarea></div>
-    <div class="field"><label for="ecPic">Profile picture (a few words)</label><input class="in" id="ecPic" data-ec="pic" maxlength="80" value="${esc(f.pic)}" placeholder="e.g. snowy owl"></div>
+    <div class="field"><label>Profile picture</label>
+      <div class="row">${avatar(Object.assign({}, c.av, f.img !== undefined ? { img: f.img || undefined } : {}, f.pic ? { pic: f.pic } : {}), c.id, "lg")}<div class="grow small muted">Use a photo from your gallery, search the web, or describe it in a few words.</div></div>
+      ${uploadBtn("ec", f.img !== undefined ? f.img : c.av && c.av.img, "ecPhotoOff")}
+      <button class="linkbtn" data-act="photoChar" data-id="${esc(c.id)}">🔎 Search the web for a photo</button>
+      <input class="in" id="ecPic" data-ec="pic" maxlength="80" value="${esc(f.pic)}" placeholder="or a few words, e.g. snowy owl"></div>
     <button class="btn accent" data-act="ecSave">Save</button>
   </div></div>`;
 }
@@ -2211,11 +2556,80 @@ function cwHogwarts() {
   if (!c.name.trim()) return toast("Add your name first");
   c.handle = (c.handle || c.name).replace(/^@/, "").replace(/\s+/g, "").slice(0, 24) || "wizard" + rnd(100, 999);
   const W = buildHogwarts(c);
-  S.W = W;
+  S.W = W; startBonds(W, c);
   S.G.worlds.push(worldIndex(W));
   S.snaps = []; S.view = { screen: "world", tab: "feed", post: null, dm: null };
   saveWorld(); flushWorld(); closeLayer(); render();
   toast(`Welcome to Hogwarts, ${W.me.house} ${HOUSES[W.me.house].em}`);
+}
+/* relationships the player sets: [type, emoji, starting relationship score] */
+const BOND_TYPES = [["Twin", "👯", 60], ["Sibling", "👫", 50], ["Cousin", "🧬", 30], ["Best friend", "💞", 70], ["Childhood friend", "🧸", 50], ["Dating", "💘", 60], ["Secret crush", "💗", 15], ["Ex", "💔", -15], ["Rival", "⚔️", -30], ["Enemy", "💀", -60], ["Mentor", "🎓", 40], ["Classmate", "📚", 5]];
+const bondEm = t => (BOND_TYPES.find(x => x[0] === t) || [, "🔗"])[1];
+const parseRep = t => String(t || "").split(/[,\n;]/).map(x => x.trim()).filter(Boolean).slice(0, 8);
+/* the people the player is tied to become characters in the world (canon ones are played faithfully) */
+function applyBonds(W, bonds) {
+  for (const b of bonds) {
+    const nm = b.name.toLowerCase();
+    let c = (b.cid && W.chars.find(x => x.id === b.cid)) || W.chars.find(x => x.name.toLowerCase() === nm) || findCharByHandle(W, b.name) || W.chars.find(x => x.kind !== "news" && (x.name.toLowerCase().includes(nm) || nm.includes(x.name.toLowerCase())));
+    if (!c) {
+      const h = cleanHandle(b.name.toLowerCase().replace(/\s+/g, "_")) || "user" + rnd(100, 999);
+      c = { id: uid("c"), name: b.name.slice(0, 40), handle: findCharByHandle(W, h) ? h + rnd(1, 99) : h, bio: "",
+        desc: `${b.name}. ${W.fandom ? `If this is a canon character of ${W.fandom}, play them faithfully to canon (personality, voice, family). ` : ""}The player's ${b.type.toLowerCase()}${b.note ? ": " + b.note : ""}.`,
+        look: "", av: { e: bondEm(b.type), c: hashN(b.name) % COLORS.length, st: AV_STYLES[hashN(b.name) % AV_STYLES.length], sd: b.name, pic: derivePic(b.name, h), picAuto: true },
+        followers: rnd(200, 20000), kind: "char", rel: 0, chem: "" };
+      W.chars.push(c);
+    }
+    b.cid = c.id;
+    c.unlocked = c.followsMe = c.iFollow = true;
+    c.chem = b.type; c.rel = (BOND_TYPES.find(x => x[0] === b.type) || [, , 10])[2];
+    W.log.push(`[day ${W.day}] Fact: ${c.name} is ${W.me.name}'s ${b.type.toLowerCase()}${b.secret ? " (a secret only they share)" : " (everyone knows)"}${b.note ? ": " + b.note : ""}`);
+  }
+}
+function startBonds(W, c) { W.me.bonds = (c.bonds || []).map(b => Object.assign({}, b)); W.me.rep = parseRep(c.rep); applyBonds(W, W.me.bonds); }
+/* each character keeps a few things they personally remember about the player */
+function applyCharMem(list) {
+  const W = S.W; if (!W || !Array.isArray(list)) return;
+  for (const x of list) { if (!x || !x.note) continue; const c = findCharByHandle(W, x.handle); if (!c || c.kind === "news") continue; c.mem = (c.mem || []).concat(String(x.note).slice(0, 140)).slice(-6); }
+}
+/* relationships between characters (not involving the player): they drive their own drama */
+function applyTies(list) {
+  const W = S.W; if (!W || !Array.isArray(list)) return;
+  for (const x of list.slice(0, 2)) {
+    if (!x || !x.type) continue;
+    const a = findCharByHandle(W, x.a), b = findCharByHandle(W, x.b); if (!a || !b || a.id === b.id) continue;
+    W.ties = W.ties || [];
+    let t = W.ties.find(y => (y.a === a.id && y.b === b.id) || (y.a === b.id && y.b === a.id));
+    if (!t) { t = { id: uid("t"), a: a.id, b: b.id }; W.ties.push(t); }
+    Object.assign(t, { type: String(x.type).slice(0, 40), note: String(x.note || "").slice(0, 160), secret: !!x.secret });
+    remember(`${a.name} & ${b.name}: ${t.type}${t.secret ? " (secret)" : ""}${t.note ? " — " + t.note : ""}`);
+  }
+}
+/* a secret of the player's came out */
+function applySecretOut(name) {
+  const W = S.W; if (!W || !name || typeof name !== "string") return;
+  const b = (W.me.bonds || []).find(x => x.secret && x.name.toLowerCase() === name.trim().toLowerCase().replace(/^@/, "") || x.secret && findCharByHandle(W, name) && findCharByHandle(W, name).id === x.cid);
+  if (!b) return;
+  b.secret = false; remember(`${W.me.name}'s secret is out: ${b.name} is their ${b.type.toLowerCase()}. Now everyone knows.`);
+  notify("rep", `Your secret with ${b.name} is out. Everyone knows now.`);
+}
+const MEM_SHAPE = `"character_memories":[{"handle":"@listed character","note":"one short thing they will now remember about the player"}]`;
+function addRep(t) {
+  const me = S.W && S.W.me; if (!me || !t || typeof t !== "string" || t.length > 140 || /^null$/i.test(t)) return;
+  me.rep = me.rep || [];
+  if (me.rep.some(x => x.toLowerCase() === t.toLowerCase())) return;
+  me.rep.push(t.trim()); if (me.rep.length > 8) me.rep.shift();
+  notify("rep", `People are saying: “${t.trim()}”`);
+}
+function bondForm(pfx, list, names) {
+  return `${list.length ? `<div class="col" style="gap:8px">${list.map(b => `<div class="row small" style="align-items:flex-start"><span style="font-size:18px">${bondEm(b.type)}</span><div class="grow"><b>${esc(b.name)}</b> · ${esc(b.type)}${b.secret ? ' <span class="tiny" style="color:var(--gold)">secret</span>' : ' <span class="tiny muted">everyone knows</span>'}${b.note ? `<div class="tiny muted">${esc(b.note)}</div>` : ""}</div><button class="iconbtn" data-act="bondDel" data-p="${pfx}" data-id="${esc(b.id)}" aria-label="Remove">${ic("x")}</button></div>`).join("")}</div>` : ""}
+  <div class="col card" style="gap:8px;margin-top:8px;padding:12px">
+    <input class="in" id="${pfx}BondName" list="${pfx}BondNames" maxlength="60" placeholder="Who? e.g. Draco Malfoy">
+    ${names.length ? `<datalist id="${pfx}BondNames">${names.map(n => `<option value="${esc(n)}">`).join("")}</datalist>` : ""}
+    <select class="in" id="${pfx}BondType">${BOND_TYPES.map(([t, e]) => `<option value="${esc(t)}">${e} ${esc(t)}</option>`).join("")}</select>
+    <input class="in" id="${pfx}BondNote" maxlength="200" placeholder="Details (optional), e.g. we're twins but I'm the black sheep">
+    <label class="row small" style="gap:8px;cursor:pointer"><input type="checkbox" id="${pfx}BondSecret" style="width:18px;height:18px;accent-color:var(--accent)"> Keep it a secret (only the two of you know)</label>
+    <button class="btn sm soft" data-act="bondAdd" data-p="${pfx}" style="align-self:flex-start">${ic("plus")} Add relationship</button>
+  </div>`;
 }
 const VIBE_PICS = { Funny: "rubber duck", Mysterious: "full moon", Spicy: "chili pepper", Sweet: "macaron", Villain: "black cat", "Main character": "sunflower", "Fresh newcomer": "cherry blossom", "Already famous": "crown" };
 const PIC_IDEAS = ["snowy owl", "black cat", "full moon", "red rose", "old books", "crown", "red fox", "cherry blossom", "vinyl record", "cauldron", "butterfly", "starry night"];
@@ -2230,7 +2644,7 @@ function avPicker(av, key, pfx) {
     ${swatches(av.c, pfx + "Color")}`;
 }
 function startCreate() {
-  S.cw = { step: 1, preset: 0, custom: "", madness: 3, imgStyle: "photo", name: "", handle: "", bio: "", look: "", vibe: "Funny", av: { e: "😎", c: 0, st: "notionists", sd: uid() }, libPick: [], bios: [], gen: null, pick: null, busy: false, house: "Sorting Hat", pic: "", era: "trio", eraText: "", place: "Hogwarts", role: "", situation: "" };
+  S.cw = { step: 1, preset: 0, custom: "", madness: 3, imgStyle: "photo", name: "", handle: "", bio: "", look: "", vibe: "Funny", av: { e: "😎", c: 0, st: "notionists", sd: uid() }, libPick: [], bios: [], gen: null, pick: null, busy: false, house: "Sorting Hat", pic: "", bonds: [], rep: "", era: "trio", eraText: "", place: "Hogwarts", role: "", situation: "" };
   openSheet(sheetCreate, true);
 }
 function sheetCreate() {
@@ -2264,7 +2678,10 @@ function sheetCreate() {
       ${c.preset === HP_PRESET ? `<div class="field"><label>Your house</label>${chips([...Object.keys(HOUSES).map(h => [h, HOUSES[h].em + " " + h]), ["Sorting Hat", "🎩 Let the Sorting Hat choose"]], c.house, "cwHouse")}<div class="tiny muted">Your house decides who's in your circle at the start and your three skills.</div></div>` : ""}
       <div class="field"><label>Vibe</label>${chips(VIBES.map(v => [v, v]), c.vibe, "cwVibe")}</div>
       <div class="field"><label for="cwPic">Profile picture (a few words)</label><div class="row"><input class="in" id="cwPic" data-cw="pic" maxlength="80" value="${esc(c.pic || "")}" placeholder="e.g. snowy owl, black cat, red rose"><button class="btn sm soft" data-act="cwPicGo">Show</button></div>
-        ${picChips(c.pic, "cwPicIdea")}<div class="tiny muted">Pick one, or type your own words and tap Show. You can also upload your own photo later from your profile.</div></div>
+        ${picChips(c.pic, "cwPicIdea")}${uploadBtn("cw", c.av.img, "cwPhotoOff")}<div class="tiny muted">Pick one, type your own words and tap Show, or use a photo from your own gallery.</div></div>
+      <div class="field"><label>Relationships (optional)</label><div class="tiny muted">Family, friends, rivals… Everyone in the world will know (unless you keep it secret) and act on it.</div>
+        ${bondForm("cw", c.bonds, c.preset === HP_PRESET ? HP_CAST.filter(x => !x[11]).map(x => x[1]) : c.preset === WW_PRESET ? (WW_ERAS[c.era] || WW_ERAS.custom).cast.map(x => x[0]) : [])}</div>
+      <div class="field"><label for="cwRep">What people say about you (optional)</label><input class="in" id="cwRep" data-cw="rep" maxlength="300" value="${esc(c.rep || "")}" placeholder="e.g. a bit unhinged, talks to ghosts, top of the class"><div class="tiny muted">Separate with commas. People will gossip about it, and it changes as you play.</div></div>
       <div class="field"><label for="cwLook">How you look (used for photos of you)</label><input class="in" id="cwLook" data-cw="look" maxlength="200" value="${esc(c.look)}" placeholder="e.g. short black bob, silver hoops, oversized denim jacket"></div>
       <div class="field"><label for="cwBio">Bio / backstory (more detail = better role-play)</label><textarea class="in" id="cwBio" data-cw="bio" maxlength="1500" placeholder="Who are you, what do you want, what are you hiding?">${esc(c.bio)}</textarea>
         <button class="btn soft sm" data-act="cwBioAI" style="align-self:flex-start" ${c.busy ? "disabled" : ""}>${c.busy ? '<span class="spin"></span>' : "✨"} Suggest bios</button>
@@ -2293,7 +2710,7 @@ async function cwBioAI() {
 World: ${worldReq(c) || "-"}
 Persona name: ${c.name || "-"}, vibe: ${c.vibe}. Notes: ${c.bio || "-"}
 ${LANG_RULE}
-Reply with ONLY JSON: {"bios":["...","...","..."]}`);
+Reply with ONLY JSON: {"bios":["...","...","..."]}`, "util");
     c.bios = (r.bios || []).slice(0, 3).map(String);
   } catch (e) { failed(e); }
   c.busy = false; refreshSheet();
@@ -2310,7 +2727,7 @@ async function cwGenerate() {
 WORLD REQUEST: ${worldReq(c)}
 If this names an existing fandom, series, game or book, use its real characters, places and lore faithfully. Otherwise invent an original world.
 DRAMA LEVEL (1-5): ${c.madness} = ${MADNESS[c.madness]}
-PLAYER PERSONA: ${c.name} (@${c.handle}), vibe: ${c.vibe}, looks: ${c.look || "-"}, bio/notes: ${c.bio || "-"}
+PLAYER PERSONA: ${c.name} (@${c.handle}), vibe: ${c.vibe}, looks: ${c.look || "-"}, bio/notes: ${c.bio || "-"}${c.bonds.length ? "\nPLAYER'S RELATIONSHIPS (include each of these people among the characters, consistent with the relationship): " + c.bonds.map(b => `${b.name} = ${b.type}${b.secret ? " (secret)" : ""}${b.note ? " (" + b.note + ")" : ""}`).join("; ") : ""}${c.rep ? "\nWHAT PEOPLE SAY ABOUT THE PLAYER: " + c.rep : ""}
 ${libs.length ? "ALSO PLACE THESE PLAYER-MADE CHARACTERS IN THE WORLD (do not include them in your characters list; just weave them into the setting):\n" + libs.map(l => `- ${l.name}: ${l.desc.slice(0, 300)}`).join("\n") : ""}
 ${LANG_RULE}
 Design the world around the player as the main character.
@@ -2357,6 +2774,7 @@ function cwStart() {
   const first = W.chars[c.pick];
   first.unlocked = first.followsMe = first.iFollow = true; first.rel = 15;
   S.W = W;
+  startBonds(W, c);
   addPosts(r.opening_posts);
   if (first.greeting) pushDM(first.id, "them", first.greeting);
   if (r.first_event && r.first_event.title) W.events.push({ id: uid("e"), title: String(r.first_event.title), desc: String(r.first_event.desc || ""), choices: (r.first_event.choices || []).slice(0, 3).map(String), day: 1, done: false });
@@ -2490,6 +2908,9 @@ function sheetWorldSettings() {
     <label class="row card" style="padding:12px;cursor:pointer"><div class="grow"><b>Mute news accounts</b><div class="small muted">Stop news and tea pages from posting about you</div></div><input type="checkbox" id="wsMute" ${W.muteNews ? "checked" : ""} style="width:22px;height:22px;accent-color:var(--accent)"></label>
     <button class="btn accent" data-act="wsSave">Save</button>
     ${W.sandbox ? `<button class="btn soft" data-act="setup">📜 Story setup (era, place, role, situation)</button>` : ""}
+    <div class="card col" style="gap:8px"><b>Backups</b><div class="small muted">A copy of this world is kept on this device the first time you open it each day (last 5). Restore one if something went wrong.</div>
+      ${st.bk == null ? `<button class="btn sm soft" data-act="bkLoad" style="align-self:flex-start">Show backups</button>` : st.bk.length ? st.bk.map(b => `<div class="row small"><span class="grow">${new Date(b.ts).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })} · day ${b.day}</span>${st.bkConfirm === b.k ? `<button class="btn sm" style="background:var(--bad);color:#fff" data-act="bkRestore" data-id="${esc(b.k)}">Yes, restore</button>` : `<button class="btn sm soft" data-act="bkAsk" data-id="${esc(b.k)}">Restore</button>`}</div>`).join("") : `<div class="small muted">No backups yet. One is made the first time you open this world each day.</div>`}
+      <button class="btn sm ghost" data-act="bkNow" style="align-self:flex-start">Back up now</button></div>
     <div class="card col" style="gap:8px"><b>Real profile photos</b><div class="small muted">Find real photos on Wikipedia for every character who doesn't have one yet. For film and TV characters this uses the actor who played them${hasAI() ? " (the AI fills in actors it's sure about)" : ""}.</div>
       <button class="btn sm soft" data-act="castPhotos" style="align-self:flex-start" ${S.castBusy ? "disabled" : ""}>${S.castBusy ? '<span class="spin"></span> Searching…' : "📷 Find photos for the cast"}</button></div>
     <div class="card col" style="gap:8px"><b>Delete this world</b>
@@ -2506,7 +2927,7 @@ function sheetEditMe() {
     <div class="field"><label for="emName">Display name</label><input class="in" id="emName" maxlength="40" value="${esc(e.name ?? me.name)}"></div>
     <div class="field"><label for="emHandle">Username (@)</label><input class="in" id="emHandle" maxlength="24" value="${esc(e.handle ?? me.handle)}"></div>
     <div class="field"><label for="emPic">Profile picture (a few words)</label><div class="row"><input class="in" id="emPic" maxlength="80" value="${esc(e.pic ?? (me.av.picAuto ? "" : me.av.pic || ""))}" placeholder="e.g. snowy owl, black cat, red rose"><button class="btn sm soft" data-act="emPicGo">Show</button></div>
-      ${picChips(e.pic ?? me.av.pic, "emPicIdea")}${e.av.img ? `<div class="tiny muted">You're using a real photo right now; picking words here switches back to a matched picture.</div>` : ""}</div>
+      ${picChips(e.pic ?? me.av.pic, "emPicIdea")}${uploadBtn("em", e.av.img, "emPhotoOff")}${e.av.img ? `<div class="tiny muted">You're using your own photo; picking words switches back to a matched picture.</div>` : ""}</div>
     <div class="field"><label for="emLook">How you look (for photos)</label><input class="in" id="emLook" maxlength="200" value="${esc(e.look ?? me.look ?? "")}"></div>
     <div class="field"><label for="emBio">Bio</label><textarea class="in" id="emBio" maxlength="1500">${esc(e.bio ?? me.bio)}</textarea></div>
     <button class="btn accent" data-act="emSave">Save</button>
@@ -2528,10 +2949,12 @@ function sheetChar() {
       <div class="row">${avatar(c.av, c.id, "lg", c.kind === "news" ? "news" : "")}<div class="grow"><div class="row" style="gap:5px"><h2 style="font-size:20px">${esc(c.name)}</h2>${num(c.followers) >= 10000 || c.kind === "news" ? badge() : ""}</div><div class="muted">@${esc(c.handle)}</div>
       <div class="small num" style="margin-top:4px"><b>${fmt(c.followers)}</b> <span class="muted">followers</span>${c.followsMe ? ' · <span class="muted">Follows you</span>' : ""}</div></div></div>
       ${c.bio ? `<div style="white-space:pre-wrap">${esc(c.bio)}</div>` : ""}
-      <button class="btn sm soft" data-act="photoChar" data-id="${esc(c.id)}" style="align-self:flex-start">${ic("camera")} ${c.av && c.av.img ? "Change photo" : "Use a real photo"}</button>
+      <button class="btn sm soft" data-act="photoChar" data-id="${esc(c.id)}" style="align-self:flex-start">${ic("camera")} ${c.av && c.av.img ? "Change photo" : "Photo from gallery or web"}</button>
       ${c.kind !== "news" ? `<div class="card col" style="gap:8px"><div class="row"><b class="grow">Relationship</b><span class="num" style="color:${relColor(c.rel)};font-weight:700">${Math.round(c.rel)}</span></div>${relBar(c.rel)}
         <div class="small muted">Dynamic: ${esc(c.chem || "not defined yet")}</div>
         ${canTalk ? `<div class="row wrap" style="gap:6px">${CHEMS.map(x => `<button class="chip" style="padding:5px 10px;font-size:13px" data-act="setChem" data-id="${esc(x)}" aria-pressed="${c.chem === x}">${esc(x)}</button>`).join("")}</div>` : ""}</div>` : ""}
+      ${(c.mem || []).length ? `<div class="card col" style="gap:6px"><b>What ${esc(c.name)} remembers about you</b>${c.mem.map((m, i) => `<div class="row small" style="align-items:flex-start"><span class="grow">• ${esc(m)}</span><button class="iconbtn" style="width:28px;height:28px" data-act="memDel" data-id="${esc(c.id)}" data-i="${i}" aria-label="Forget">${ic("x")}</button></div>`).join("")}</div>` : ""}
+      ${c.kind !== "news" ? tieCard(c) : ""}
       ${canTalk ? `<div class="row"><button class="btn accent grow" data-act="dmFromProfile" data-id="${esc(c.id)}">Message</button><button class="btn ghost grow" data-act="actFromProfile" data-id="${esc(c.id)}">Invite to activity</button></div>` : c.kind === "news" ? "" : `<div class="row"><span class="grow small muted">Not in your circle.</span><button class="btn sm accent" data-act="unlock" data-id="${esc(c.id)}">Add to circle</button></div>`}
       <div class="row wrap" style="gap:8px"><button class="btn sm ghost" data-act="charEdit" data-id="${esc(c.id)}">${ic("edit")} Edit character</button>${canTalk ? `<button class="btn sm ghost" data-act="charRemove" data-id="${esc(c.id)}">Remove from circle</button>` : ""}</div>
     </div>
@@ -2579,7 +3002,7 @@ async function aiPhotoQuery(c) {
   const W = S.W;
   const r = await ai(`World / fandom: ${W.fandom || W.name}. Character: ${c.name} (@${c.handle}). ${String(c.desc || c.bio || "").slice(0, 300)}
 I want a real photo to use as this character's profile picture. If the character was played by a real actor in a well-known live-action film or TV adaptation, give the actor's name exactly as their English Wikipedia article title. Otherwise give a short search phrase (3-6 words) for a fitting free stock photo of a person.
-Reply with ONLY JSON: {"actor": "name or null", "query": "search phrase"}`);
+Reply with ONLY JSON: {"actor": "name or null", "query": "search phrase"}`, "util");
   return (typeof r.actor === "string" && r.actor && r.actor !== "null") ? { q: r.actor, actor: r.actor } : { q: String(r.query || c.name) };
 }
 /* whole cast at once: known actors (and, for AI-made worlds, actors the AI names) -> Wikipedia photos */
@@ -2596,7 +3019,7 @@ async function castPhotos(quiet) {
       try {
         const r = await ai(`World / fandom: ${W.fandom || W.name}. For each character below: if they are a canon character played by a real actor in a well-known live-action film or TV adaptation, give that actor's name exactly as their English Wikipedia article title, else null. Only answer when you are sure.
 ${rest.map(c => `@${c.handle}: ${c.name}`).join("\n")}
-Reply with ONLY JSON like {"@handle": "Actor Name" or null}`);
+Reply with ONLY JSON like {"@handle": "Actor Name" or null}`, "util");
         for (const c of rest) { const v = r["@" + c.handle] || r[c.handle]; if (typeof v === "string" && v.trim() && v !== "null") names[c.id] = v.trim(); }
       } catch (e) { failed(e); }
     }
@@ -2675,6 +3098,19 @@ function sheetPhoto() {
   </div></div>`;
 }
 
+function tieCard(c) {
+  const W = S.W, ties = (W.ties || []).filter(t => t.a === c.id || t.b === c.id), others = W.chars.filter(x => x.id !== c.id && x.kind !== "news");
+  return `<div class="card col" style="gap:8px"><b>${esc(c.name)}'s relationships</b>
+    ${ties.length ? ties.map(t => { const o = W.chars.find(x => x.id === (t.a === c.id ? t.b : t.a)); return o ? `<div class="row small" style="align-items:flex-start"><span>${bondEm(t.type)}</span><div class="grow"><b>${esc(o.name)}</b> · ${esc(t.type)}${t.secret ? ' <span class="tiny" style="color:var(--gold)">secret</span>' : ""}${t.note ? `<div class="tiny muted">${esc(t.note)}</div>` : ""}</div><button class="iconbtn" style="width:28px;height:28px" data-act="tieDel" data-id="${esc(t.id)}" aria-label="Remove">${ic("x")}</button></div>` : ""; }).join("") : `<div class="small muted">None set. Add one and they'll act on it, with or without you.</div>`}
+    ${others.length ? `<select class="in" id="tieWho">${others.map(o => `<option value="${esc(o.id)}">${esc(o.name)}</option>`).join("")}</select>
+    <input class="in" id="tieType" list="tieTypes" maxlength="40" placeholder="Relationship, e.g. Dating, Rivals, Siblings">
+    <datalist id="tieTypes">${[...BOND_TYPES.map(x => x[0]), "Rivals", "Secret alliance", "Broke up", "Frenemies"].map(x => `<option value="${esc(x)}">`).join("")}</datalist>
+    <input class="in" id="tieNote" maxlength="160" placeholder="Details (optional)">
+    <label class="row small" style="gap:8px;cursor:pointer"><input type="checkbox" id="tieSecret" style="width:18px;height:18px;accent-color:var(--accent)"> Secret (only the two of them know)</label>
+    <button class="btn sm soft" data-act="tieAdd" data-id="${esc(c.id)}" style="align-self:flex-start">${ic("plus")} Add relationship</button>` : ""}
+  </div>`;
+}
+
 /* ---------- random account profile ---------- */
 function npcActivity(W, h) {
   const k = String(h).toLowerCase(), out = [];
@@ -2725,7 +3161,7 @@ async function addCharAI() {
 
 The player wants to add this person to the world and to their circle: "${q}".
 If it names an existing character from the world's canon or fandom, recreate them faithfully: canon personality, voice, role, and only what they would know at this point of the story. Otherwise invent a fitting new character for this world.
-Reply with ONLY JSON: {"name":"","handle":"lowercase_handle_no_at","bio":"public bio, max 80 chars","desc":"personality, voice, posting style, secrets, how they see the player: 3-4 sentences","look":"appearance in under 20 words, no names","pic":"profile picture as a 2-4 word photo-search phrase naming one real object, animal or place that fits them (e.g. 'silver ring', 'snowy owl'); never a person or a name","emoji":"one emoji","followers":0,"greeting":"the first DM they send the player"}`);
+Reply with ONLY JSON: {"name":"","handle":"lowercase_handle_no_at","bio":"public bio, max 80 chars","desc":"personality, voice, posting style, secrets, how they see the player: 3-4 sentences","look":"appearance in under 20 words, no names","pic":"profile picture as a 2-4 word photo-search phrase naming one real object, animal or place that fits them (e.g. 'silver ring', 'snowy owl'); never a person or a name","emoji":"one emoji","followers":0,"greeting":"the first DM they send the player"}`, "scene");
     if (!r.name) throw { code: "badjson" };
     snapshot();
     let c = W.chars.find(x => x.name.toLowerCase() === String(r.name).toLowerCase()) || findCharByHandle(W, r.handle);
@@ -2775,7 +3211,7 @@ async function lfAI() {
     const r = await ai(`Write a role-play character card for an AI social-media simulation.
 Name: ${f.name}. Handle: @${f.handle || "-"}. Notes from the user: ${f.desc || f.bio || "-"}
 ${LANG_RULE}
-Reply with ONLY JSON: {"bio":"public social bio, max 80 chars","look":"appearance in under 20 words","desc":"personality, voice, posting style, quirks, secrets: 4-6 sentences, under 1200 characters"}`);
+Reply with ONLY JSON: {"bio":"public social bio, max 80 chars","look":"appearance in under 20 words","desc":"personality, voice, posting style, quirks, secrets: 4-6 sentences, under 1200 characters"}`, "util");
     if (r.bio) f.bio = String(r.bio).slice(0, 160); if (r.desc) f.desc = String(r.desc).slice(0, 1500); if (r.look && !f.look) f.look = String(r.look).slice(0, 200);
   } catch (e) { failed(e); }
   f.busy = false; refreshSheet();
@@ -2806,7 +3242,7 @@ async function postStory() {
 The player just posted an Instagram-style STORY: "${text}"${img ? ` (photo: ${img.d})` : ""}
 Which listed characters (only ones in the player's circle) would reply privately, and what would they send?
 Reply with ONLY JSON: {"viewers":0,"reactions":[{"handle":"@listed character","text":"their DM reply to the story"}],"memory":"one sentence or empty"}
-viewers: a realistic count for ${W.me.followers} followers. reactions: 0-2.`);
+viewers: a realistic count for ${W.me.followers} followers. reactions: 0-2.`, "chat");
     for (const x of (r.reactions || []).slice(0, 2)) { const c = findCharByHandle(W, x && x.handle); if (c && c.unlocked && c.kind !== "news" && x.text) { pushDM(c.id, "sys", `Replied to your story: “${(text || img.d).slice(0, 60)}”`); pushDM(c.id, "them", String(x.text)); notify("dm", `${c.name} replied to your story`, { dm: c.id }); } }
     if (r.memory) remember(r.memory);
     toast(`${fmt(num(r.viewers) || rnd(20, 200))} people viewed your story`);
@@ -2871,6 +3307,14 @@ function sheetActivity() {
 }
 /* ================= actions (click delegation) ================= */
 const val = id => { const el = document.getElementById(id); return el ? el.value : ""; };
+/* a photo picked from the device: shrunk to a 192px JPEG and stored with the save */
+function applyUpload(where, url) {
+  if (where === "cw") { S.cw.av = Object.assign({}, S.cw.av, { img: url }); }
+  else if (where === "em") { keepEditMe(); S.editMe.av = Object.assign({}, S.editMe.av, { img: url }); }
+  else if (where === "ec") { S.editChar.img = url; }
+  refreshSheet(); toast("Photo added");
+}
+const uploadBtn = (where, has, offAct) => `<div class="row wrap" style="gap:8px;margin-top:8px"><label class="btn sm soft" style="cursor:pointer">📁 Choose from my photos<input type="file" accept="image/*" data-up="${where}" hidden></label>${has ? `<button class="btn sm ghost" data-act="${offAct}">Remove photo</button>` : ""}</div>`;
 function setEditPic(x) { const e = S.editMe; e.pic = x; if (x) e.av = Object.assign({}, e.av, { pic: x, picAuto: false, img: undefined }); refreshSheet(); }
 function keepEditMe() { const e = S.editMe; e.name = val("emName"); e.handle = val("emHandle"); e.bio = val("emBio"); e.look = val("emLook"); e.pic = val("emPic"); }
 function avTarget(pfx) { return pfx === "cw" ? S.cw.av : pfx === "em" ? S.editMe.av : S.libForm.av; }
@@ -2878,15 +3322,22 @@ function avEdit(pfx, fn) { if (pfx === "em") keepEditMe(); fn(avTarget(pfx)); re
 const ACT = {
   // navigation
   home() { if (isBusy()) return toast("Wait for the AI to finish first"); flushWorld(); S.view = { screen: "home", tab: "feed" }; S.W = null; S.snaps = []; render(); },
-  back() { if (S.view.post) S.view.post = null; else if (S.view.dm) { S.view.dm = null; S.view.tab = "dms"; } render(); },
-  tab(el) { const same = S.view.tab === el.dataset.id && !S.view.post && !S.view.dm; S.view.tab = el.dataset.id; S.view.post = null; S.view.dm = null; render(); if (same) { const sc = $(".scroll", app); if (sc) sc.scrollTop = 0; } },
+  back() { if (S.view.post && S.view.focus) { const p = S.W.posts.find(x => x.id === S.view.post), r = p && replyById(p, S.view.focus); S.view.focus = r && r.to || null; S.view.replyTo = null; } else if (S.view.post) S.view.post = null; else if (S.view.dm) { S.view.dm = null; S.view.tab = "dms"; } else if (S.view.group) { S.view.group = null; S.view.tab = "dms"; } render(); },
+  tab(el) { const same = S.view.tab === el.dataset.id && !S.view.post && !S.view.dm && !S.view.group; S.view.tab = el.dataset.id; S.view.post = null; S.view.dm = null; S.view.group = null; render(); if (same) { const sc = $(".scroll", app); if (sc) sc.scrollTop = 0; } },
   async openWorld(el) {
     const id = el.dataset.id; const w = await loadWorld(id);
     if (!w) { toast("Couldn't find this world's save"); S.G.worlds = S.G.worlds.filter(x => x.id !== id); saveMeta(); return render(); }
-    normalizeWorld(w); S.W = w; S.snaps = []; S.view = { screen: "world", tab: "feed", post: null, dm: null }; checkAch(); render();
+    normalizeWorld(w); S.W = w; S.snaps = []; S.view = { screen: "world", tab: "feed", post: null, dm: null }; checkAch(); render(); dailyBackup(w);
   },
   newWorld() { if (!hasAI()) return openApi("Add a free AI key (OpenRouter, Groq or Gemini) to build a world."); startCreate(); },
-  openPost(el) { if (S.sheet) closeLayer(); S.view.dm = null; S.view.post = el.dataset.id; S.view.replyDraft = ""; render(); },
+  openPost(el) { if (S.sheet) closeLayer(); S.view.dm = null; S.view.group = null; S.view.post = el.dataset.id; S.view.focus = null; S.view.replyTo = null; S.view.replyDraft = ""; render(); const sc = $(".scroll", app); if (sc) sc.scrollTop = 0; },
+  openReply(el) { if (S.sheet) closeLayer(); S.view.dm = null; S.view.post = el.dataset.post; S.view.focus = el.dataset.id; S.view.replyTo = null; render(); const sc = $(".scroll", app); if (sc) sc.scrollTop = 0; },
+  replyTo(el) { S.view.post = el.dataset.post; S.view.replyTo = el.dataset.id || null; render(); $("#replyIn")?.focus(); },
+  likeReply(el) { const p = S.W.posts.find(x => x.id === el.dataset.post), r = p && replyById(p, el.dataset.id); if (!r) return; r.liked = !r.liked; r.likes = Math.max(0, num(r.likes) + (r.liked ? 1 : -1)); if (r.liked && typeof r.a === "string" && r.a !== "me") { const c = S.W.chars.find(x => x.id === r.a); if (c && c.unlocked && !r.likedOnce) { r.likedOnce = true; c.rel = clamp(c.rel + 1, -100, 100); } } saveWorld(); render(); },
+  moreReplies(el) { if (!hasAI()) return openApi("Add a free AI key first."); moreReplies(el.dataset.post, el.dataset.id || null); },
+  quote(el) { closeLayer(); S.view.quote = el.dataset.id; S.view.post = null; S.view.focus = null; S.view.dm = null; S.view.tab = "feed"; render(); $("#composer")?.focus(); },
+  quoteOff() { S.view.quote = null; render(); },
+  repost(el) { const p = S.W.posts.find(x => x.id === el.dataset.id); if (!p) return; p.rted = !p.rted; p.rts += p.rted ? 1 : -1; saveWorld(); closeLayer(); render(); toast(p.rted ? "Reposted" : "Repost undone"); },
   profileOf(el, ev) {
     const a = el.dataset.a;
     if (!a) { const up = el.parentElement && el.parentElement.closest("[data-act]"); if (up) run(up, ev); return; }
@@ -2896,7 +3347,7 @@ const ACT = {
   },
   notif(el) {
     const n = S.W.notifs.find(x => x.id === el.dataset.id); if (!n) return; n.read = true;
-    if (n.ref?.post) S.view.post = n.ref.post; else if (n.ref?.dm) S.view.dm = n.ref.dm; else if (n.k === "event") S.view.tab = "explore"; else if (["level", "milestone", "ach"].includes(n.k)) S.view.tab = "profile";
+    if (n.ref?.post) { S.view.post = n.ref.post; S.view.focus = n.ref.focus || null; S.view.replyTo = null; S.view.dm = null; } else if (n.ref?.dm) S.view.dm = n.ref.dm; else if (n.k === "event") S.view.tab = "explore"; else if (["level", "milestone", "ach"].includes(n.k)) S.view.tab = "profile";
     render();
   },
   // feed
@@ -2905,7 +3356,7 @@ const ACT = {
     if (!t.trim() && !ph) return toast("Write something first");
     if (!hasAI()) return openApi("Add a free AI key (OpenRouter, Groq or Gemini) to start posting.");
     if (guard()) return;
-    S.view.draft = ""; S.view.photoDraft = ""; S.view.photoOpen = false; makePost(t, ph);
+    const q = S.view.quote; S.view.draft = ""; S.view.photoDraft = ""; S.view.photoOpen = false; S.view.quote = null; makePost(t, ph, q);
   },
   photoToggle() { S.view.photoOpen = !S.view.photoOpen; if (!S.view.photoOpen) S.view.photoDraft = ""; render(); if (S.view.photoOpen) $("#photoIn")?.focus(); },
   boost(el) { const k = el.dataset.id === "viral" ? "boostViral" : "boostClout"; S.view[k] = !S.view[k]; render(); },
@@ -2915,8 +3366,8 @@ const ACT = {
     if (p.liked && typeof p.a === "string" && p.a !== "me" && !p.likedOnce) { p.likedOnce = true; const c = S.W.chars.find(x => x.id === p.a); if (c && c.unlocked) c.rel = clamp(c.rel + 1, -100, 100); }
     saveWorld(); render();
   },
-  rt(el) { const p = S.W.posts.find(x => x.id === el.dataset.id); if (!p) return; p.rted = !p.rted; p.rts += p.rted ? 1 : -1; saveWorld(); render(); },
-  reply(el) { const t = val("replyIn"); if (!t.trim()) return; if (!hasAI()) return openApi("Add a free AI key (OpenRouter, Groq or Gemini) first."); if (guard()) return; S.view.replyDraft = ""; makeReply(el.dataset.id, t); },
+  rt(el) { const p = S.W.posts.find(x => x.id === el.dataset.id); if (!p) return; S.rtPost = p.id; openSheet(sheetRepost); },
+  reply(el) { const t = val("replyIn"); if (!t.trim()) return; if (!hasAI()) return openApi("Add a free AI key (OpenRouter, Groq or Gemini) first."); if (guard()) return; const to = S.view.replyTo || S.view.focus || null; S.view.replyDraft = ""; S.view.replyTo = null; makeReply(el.dataset.id, t, to); },
   focusReply() { $("#replyIn")?.focus(); },
   rewind() { rewind(); },
   // stories
@@ -2943,11 +3394,27 @@ const ACT = {
   actUndo() { actUndo(); },
   actClose() { S.W.act = null; saveWorld(); closeLayer(); render(); },
   // DMs
-  openDM(el) { S.view.dm = el.dataset.id; S.view.dmDraft = ""; S.stickBottom = true; render(); },
+  openGroup(el) { S.view.group = el.dataset.id; S.view.dm = null; S.view.post = null; S.view.gDraft = ""; S.stickBottom = true; render(); },
+  newGroup() { const circle = S.W.chars.filter(c => c.unlocked && c.kind !== "news"); if (circle.length < 2) return toast("You need at least 2 people in your circle"); S.newGroup = { id: null, name: "", members: [] }; openSheet(sheetNewGroup); },
+  groupInfo() { const g = S.W.groups.find(x => x.id === S.view.group); if (!g) return; S.newGroup = { id: g.id, name: g.name, members: [...g.members] }; openSheet(sheetNewGroup); },
+  groupSave() {
+    const W = S.W, f = S.newGroup; f.members = [...document.querySelectorAll("[data-ngm]")].filter(x => x.checked).map(x => x.dataset.ngm);
+    if (!String(f.name).trim()) return toast("Give the group a name"); if (f.members.length < 2) return toast("Pick at least 2 people");
+    snapshot(); W.groups = W.groups || [];
+    let g = f.id && W.groups.find(x => x.id === f.id);
+    if (!g) { g = { id: uid("g"), name: "", members: [], msgs: [], read: Date.now() }; W.groups.push(g); g.msgs.push({ f: "sys", t: `${W.me.name} created the group`, day: W.day, ts: Date.now() }); remember(`${W.me.name} made a group chat "${f.name.trim()}" with ${f.members.map(id => (W.chars.find(c => c.id === id) || {}).name).join(", ")}`); }
+    else if (g.name !== f.name.trim()) g.msgs.push({ f: "sys", t: `Group renamed to ${f.name.trim()}`, day: W.day, ts: Date.now() });
+    g.name = f.name.trim().slice(0, 40); g.members = f.members;
+    saveWorld(); closeLayer(); S.view.group = g.id; S.view.dm = null; S.view.post = null; S.stickBottom = true; render();
+  },
+  groupLeave() { const W = S.W; snapshot(); W.groups = W.groups.filter(x => x.id !== S.newGroup.id); saveWorld(); closeLayer(); S.view.group = null; S.view.tab = "dms"; render(); toast("You left the group"); },
+  sendGroup(el) { const t = val("gIn"); if (!t.trim()) return; if (!hasAI()) return openApi("Add a free AI key first."); if (guard()) return; S.view.gDraft = ""; S.stickBottom = true; sendGroup(el.dataset.id, t); },
+  openDM(el) { S.view.group = null; S.view.dm = el.dataset.id; S.view.dmDraft = ""; S.stickBottom = true; render(); },
   sendDM(el) { const t = val("dmIn"); if (!t.trim()) return; if (!hasAI()) return openApi("Add a free AI key (OpenRouter, Groq or Gemini) first."); if (guard()) return; S.view.dmDraft = ""; S.stickBottom = true; sendDM(el.dataset.id, t); },
   dmFromProfile(el) { closeLayer(); S.view.post = null; S.view.dm = el.dataset.id; S.stickBottom = true; render(); },
   actFromProfile(el) { closeLayer(); S.view.post = null; S.view.dm = null; S.view.tab = "explore"; S.view.actChar = el.dataset.id; render(); $("#actIn")?.focus(); },
-  setChem(el) { const c = S.W.chars.find(x => x.id === S.charView); if (!c) return; snapshot(); c.chem = el.dataset.id; pushDM(c.id, "sys", `You and ${c.name} are now: ${c.chem}`); remember(`${S.W.me.name} and ${c.name}'s relationship became "${c.chem}"`); saveWorld(); refreshSheet(); },
+  setChem(el) { const c = S.W.chars.find(x => x.id === S.charView); if (!c) return; snapshot(); c.chem = el.dataset.id;
+    { const me = S.W.me, b = (me.bonds = me.bonds || []).find(x => x.cid === c.id); if (b) b.type = c.chem; else me.bonds.push({ id: uid("b"), name: c.name, type: c.chem, note: "", secret: false, cid: c.id }); } pushDM(c.id, "sys", `You and ${c.name} are now: ${c.chem}`); remember(`${S.W.me.name} and ${c.name}'s relationship became "${c.chem}"`); saveWorld(); refreshSheet(); },
   // profile
   upSkill(el) { upgradeSkill(+el.dataset.id); },
   unlock(el) { unlockChar(el.dataset.id); },
@@ -2976,12 +3443,12 @@ const ACT = {
   buyClout() { buy(20, () => S.W.me.boosts.clout++, "Got a clout boost"); },
   // API
   api() { openApi(""); },
-  async keySave() { const k = val("keyIn").trim(); if (!k) return toast("Paste your key first"); S.G.apiKey = k; delete COOL.openrouter; delete BADKEY.openrouter; LS.set("mc_cool", COOL); saveMeta(); S.apiMsg = ""; S.key = null; refreshSheet(); await refreshKey(); if (S.key && !S.key.error) toast("Key saved and working"); render(); },
+  async keySave() { const k = val("keyIn").trim(); if (!k) return toast("Paste your key first"); S.G.apiKey = k; clearCool("openrouter"); delete BADKEY.openrouter; saveMeta(); S.apiMsg = ""; S.key = null; refreshSheet(); await refreshKey(); if (S.key && !S.key.error) toast("Key saved and working"); render(); },
   keyRefresh() { S.key = null; refreshSheet(); refreshKey(); },
   keyRemove() { S.G.apiKey = ""; S.key = null; saveMeta(); refreshSheet(); render(); toast("Key removed from this browser"); },
   async provKeySave(el) {
     const p = el.dataset.p, P = PROV[p], k = val(p + "KeyIn").trim(); if (!k) return toast("Paste your key first");
-    S.G[P.keyF] = k; delete COOL[p]; delete BADKEY[p]; LS.set("mc_cool", COOL); saveMeta(); S.apiMsg = "";
+    S.G[P.keyF] = k; clearCool(p); delete BADKEY[p]; saveMeta(); S.apiMsg = "";
     S.pmodels = S.pmodels || {}; S.pmodels[p] = null; refreshSheet();
     await loadProvModels(p); refreshSheet(); render();
     toast(S.pmodels[p] && S.pmodels[p].length ? `${P.name} key saved and working` : `${P.name} key saved, but it couldn't be checked. Make sure it's right.`);
@@ -3057,8 +3524,50 @@ const ACT = {
   cwVibe(el) { S.cw.vibe = el.dataset.id; refreshSheet(); },
   cwPicIdea(el) { S.cw.pic = el.dataset.id; refreshSheet(); },
   cwPicGo() { S.cw.pic = val("cwPic").trim(); refreshSheet(); },
+  async bkLoad() { try { S.wsState.bk = await bkList(S.W.id); } catch { S.wsState.bk = []; toast("Backups aren't available in this browser"); } refreshSheet(); },
+  bkAsk(el) { S.wsState.bkConfirm = el.dataset.id; refreshSheet(); },
+  async bkNow() { const W = S.W; flushWorld(); try { await bkPut({ k: W.id + "|" + todayKey() + "|" + Date.now(), id: W.id, name: W.name, day: W.day, ts: Date.now(), data: JSON.stringify(W) }); for (const x of (await bkList(W.id)).slice(6)) await bkDel(x.k); toast("Backed up"); ACT.bkLoad(); } catch { toast("Couldn't back up in this browser"); } },
+  async bkRestore(el) {
+    if (guard()) return;
+    try {
+      const rec = await bkGet(el.dataset.id); if (!rec) return toast("That backup is gone");
+      snapshot(); S.W = normalizeWorld(JSON.parse(rec.data)); saveWorld(); flushWorld();
+      closeLayer(); S.view = { screen: "world", tab: "feed", post: null, dm: null }; render(); toast(`Restored to day ${S.W.day}. Rewind undoes it.`);
+    } catch { toast("Couldn't restore that backup"); }
+  },
+  tieAdd(el) {
+    const W = S.W, a = W.chars.find(x => x.id === el.dataset.id), b = W.chars.find(x => x.id === val("tieWho")), type = val("tieType").trim();
+    if (!a || !b) return; if (!type) return toast("Type the relationship first");
+    snapshot();
+    applyTies([{ a: a.handle, b: b.handle, type, note: val("tieNote").trim(), secret: !!(document.getElementById("tieSecret") || {}).checked }]);
+    saveWorld(); refreshSheet(); toast(`${a.name} & ${b.name}: ${type}`);
+  },
+  tieDel(el) { const W = S.W, t = (W.ties || []).find(x => x.id === el.dataset.id); if (!t) return; snapshot(); W.ties = W.ties.filter(x => x !== t); const a = W.chars.find(c => c.id === t.a), b = W.chars.find(c => c.id === t.b); if (a && b) remember(`${a.name} & ${b.name} are no longer ${t.type.toLowerCase()}`); saveWorld(); refreshSheet(); },
+  memDel(el) { const c = S.W.chars.find(x => x.id === el.dataset.id); if (!c || !c.mem) return; snapshot(); c.mem.splice(+el.dataset.i, 1); saveWorld(); refreshSheet(); },
+  bondAdd(el) {
+    const pfx = el.dataset.p, name = val(pfx + "BondName").trim(), type = val(pfx + "BondType") || "Best friend", note = val(pfx + "BondNote").trim(), secret = !!(document.getElementById(pfx + "BondSecret") || {}).checked;
+    if (!name) return toast("Type who it is first");
+    const b = { id: uid("b"), name: name.slice(0, 60), type, note, secret };
+    if (pfx === "cw") { S.cw.bonds.push(b); return refreshSheet(); }
+    const W = S.W; snapshot(); (W.me.bonds = W.me.bonds || []).push(b); applyBonds(W, [b]);
+    saveWorld(); render(); toast(`${bondEm(type)} ${name}: ${type}`);
+  },
+  bondDel(el) {
+    const pfx = el.dataset.p, id = el.dataset.id;
+    if (pfx === "cw") { S.cw.bonds = S.cw.bonds.filter(x => x.id !== id); return refreshSheet(); }
+    const W = S.W, b = (W.me.bonds || []).find(x => x.id === id); if (!b) return;
+    snapshot(); W.me.bonds = W.me.bonds.filter(x => x.id !== id);
+    remember(`${b.name} is no longer ${W.me.name}'s ${b.type.toLowerCase()}`);
+    const c = W.chars.find(x => x.id === b.cid); if (c && c.chem === b.type) c.chem = "";
+    saveWorld(); render();
+  },
+  repAdd() { const t = val("repIn").trim(); if (!t) return; snapshot(); const me = S.W.me; me.rep = me.rep || []; if (!me.rep.includes(t)) me.rep.push(t); if (me.rep.length > 8) me.rep.shift(); remember(`People say ${me.name} is ${t}`); saveWorld(); render(); },
+  repDel(el) { snapshot(); S.W.me.rep.splice(+el.dataset.id, 1); saveWorld(); render(); },
   emPicIdea(el) { keepEditMe(); setEditPic(el.dataset.id); },
   emPicGo() { keepEditMe(); setEditPic(S.editMe.pic.trim()); },
+  cwPhotoOff() { S.cw.av = Object.assign({}, S.cw.av, { img: undefined }); refreshSheet(); },
+  emPhotoOff() { keepEditMe(); S.editMe.av = Object.assign({}, S.editMe.av, { img: undefined }); refreshSheet(); },
+  ecPhotoOff() { S.editChar.img = ""; refreshSheet(); },
   cwBioAI() { cwBioAI(); },
   cwBioPick(el) { S.cw.bio = S.cw.bios[+el.dataset.id] || S.cw.bio; refreshSheet(); },
   cwGen() { S.cw.preset === HP_PRESET ? cwHogwarts() : S.cw.preset === WW_PRESET ? cwWizarding() : cwGenerate(); },
@@ -3093,6 +3602,7 @@ const ACT = {
     snapshot();
     c.name = String(f.name).trim() || c.name; c.handle = h || c.handle; c.bio = String(f.bio).trim(); c.desc = String(f.desc).trim();
     if (String(f.pic).trim()) c.av = Object.assign({}, c.av, { pic: f.pic.trim(), picAuto: false });
+    if (f.img !== undefined) c.av = Object.assign({}, c.av, { img: f.img || undefined });
     remember(`${c.name}'s character was rewritten: ${c.desc.slice(0, 120)}`);
     saveWorld(); S.editChar = null; openSheet(sheetChar); render(); toast("Character updated");
   },
@@ -3162,7 +3672,9 @@ document.addEventListener("click", ev => {
 });
 document.addEventListener("change", ev => {
   const el = ev.target;
+  if (el.id === "smartTog") { S.G.smartRouting = el.checked; saveMeta(); refreshSheet(); }
   if (el.id === "avTog") { S.G.avatars = el.checked; saveMeta(); refreshSheet(); render(); }
+  if (el.dataset && el.dataset.up && el.files && el.files[0]) shrinkImage(el.files[0]).then(url => applyUpload(el.dataset.up, url), () => toast("Couldn't read that image"));
   if (el.id === "ppFile" && el.files && el.files[0]) shrinkImage(el.files[0]).then(setPhoto, () => toast("Couldn't read that image"));
   if (el.dataset && el.dataset.actChange) { const f = ACT[el.dataset.actChange]; if (f) f(el, ev); }
 });
@@ -3177,6 +3689,7 @@ document.addEventListener("input", ev => {
   if (d.acq && S.addChar) S.addChar[d.acq] = el.value;
   if (d.su && S.setup) S.setup[d.su] = el.value;
   if (d.ec && S.editChar) S.editChar[d.ec] = el.value;
+  if (d.ng && S.newGroup) S.newGroup[d.ng] = el.value;
   if (el.id === "wsMad") $("#wsMadL").textContent = `${el.value} · ${MADNESS[el.value]}`;
   if (el.hasAttribute && el.hasAttribute("data-grow")) { el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight, 160) + "px"; }
 });
@@ -3184,14 +3697,14 @@ document.addEventListener("keydown", ev => {
   const el = ev.target;
   if (ev.key === "Escape" && (S.sheet || S.sv)) { if (S.sv) ACT.svClose(); else ACT.close(); return; }
   if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) {
-    const map = { dmIn: "[data-act=sendDM]", replyIn: "[data-act=reply]", actTurn: "[data-act=actSend]", svReply: "[data-act=svSend]", actIn: "[data-act=startAct]", keyIn: "[data-act=keySave]", groqKeyIn: "[data-act=provKeySave][data-p=groq]", geminiKeyIn: "[data-act=provKeySave][data-p=gemini]", acPass: "[data-act=acSubmit]", ppQ: "[data-act=ppSearch]", acQ: "[data-act=addCharGo]", cwPic: "[data-act=cwPicGo]", emPic: "[data-act=emPicGo]", ppUrl: "[data-act=ppUrl]", acNew: "[data-act=acNewPass]", modelCustom: "[data-act=modelCustom]", photoIn: "[data-act=post]" };
+    const map = { dmIn: "[data-act=sendDM]", replyIn: "[data-act=reply]", actTurn: "[data-act=actSend]", svReply: "[data-act=svSend]", actIn: "[data-act=startAct]", keyIn: "[data-act=keySave]", groqKeyIn: "[data-act=provKeySave][data-p=groq]", geminiKeyIn: "[data-act=provKeySave][data-p=gemini]", acPass: "[data-act=acSubmit]", ppQ: "[data-act=ppSearch]", acQ: "[data-act=addCharGo]", gIn: "[data-act=sendGroup]", cwPic: "[data-act=cwPicGo]", emPic: "[data-act=emPicGo]", ppUrl: "[data-act=ppUrl]", acNew: "[data-act=acNewPass]", modelCustom: "[data-act=modelCustom]", photoIn: "[data-act=post]" };
     if (el.id && el.id.startsWith("ev_")) { ev.preventDefault(); const b = el.parentElement.querySelector("[data-act=eventCustom]"); if (b) run(b, ev); return; }
     if (map[el.id]) { ev.preventDefault(); const b = document.querySelector(map[el.id]); if (b) run(b, ev); return; }
     if (el.id === "composer" && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); ACT.post(); }
   }
   if ((ev.key === "Enter" || ev.key === " ") && el.getAttribute && el.getAttribute("role") === "button") { ev.preventDefault(); run(el, ev); }
 });
-document.addEventListener("scroll", () => { const sc = $(".scroll", app); if (sc && S.view.dm) S.stickBottom = sc.scrollHeight - sc.scrollTop - sc.clientHeight < 80; }, true);
+document.addEventListener("scroll", () => { const sc = $(".scroll", app); if (sc && (S.view.dm || S.view.group)) S.stickBottom = sc.scrollHeight - sc.scrollTop - sc.clientHeight < 80; }, true);
 function applyTheme() {
   const t = S.G.theme; if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
   const m = $("#themeColor"); if (m) m.content = isDark() ? "#1C171B" : "#FFFFFF";
@@ -3206,6 +3719,10 @@ function normalizeWorld(w) {
   if (!w.me.boosts) w.me.boosts = { viral: 0, clout: 0 };
   for (const p of w.posts) { if (!Array.isArray(p.replies)) p.replies = []; p.pending = false; }
   if (!w.npcs || typeof w.npcs !== "object") w.npcs = {};
+  if (!Array.isArray(w.me.bonds)) w.me.bonds = [];
+  if (!Array.isArray(w.ties)) w.ties = [];
+  if (!Array.isArray(w.groups)) w.groups = [];
+  if (!Array.isArray(w.me.rep)) w.me.rep = [];
   for (const c of w.chars) { c.av = c.av || { e: "🙂" }; if (!c.av.pic) Object.assign(c.av, { pic: derivePic(c.name, c.handle, c.bio), picAuto: true }); }
   if (!w.me.av.pic) Object.assign(w.me.av, { pic: derivePic(w.me.name, w.me.handle, w.me.bio), picAuto: true });
   w.madness = clamp(num(w.madness) || 3, 1, 5); w.day = Math.max(1, num(w.day) || 1);
