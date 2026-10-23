@@ -297,6 +297,11 @@ button,.tabs,.story,.chip{-webkit-user-select:none;user-select:none}
 .linkbtn{color:var(--blue);font-size:13px;font-weight:600;align-self:flex-start}
 .err{color:var(--bad);font-size:13px}
 .okmsg{color:var(--good);font-size:13px}
+.photogrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:8px}
+.photogrid button{display:flex;flex-direction:column;border-radius:12px;overflow:hidden;background:var(--surface-2);text-align:left}
+.photogrid button span{font-size:11px;color:var(--muted);padding:3px 6px}
+.photogrid button:hover{outline:2px solid var(--accent)}
+.photogrid img{width:100%;aspect-ratio:1;object-fit:cover;display:block}
 </style>
 </head>
 <body>
@@ -336,9 +341,20 @@ function avURL(a, key) {
   const seed = (a && a.sd) || key;
   return `https://api.dicebear.com/9.x/${st}/svg?seed=${encodeURIComponent(seed)}`;
 }
+/* profile pictures, in order: a real photo (av.img), an aesthetic photo found on Wikimedia Commons
+   for the account's picture phrase (av.pic, "aesthetic" mode), an illustration ("cartoon" mode), the emoji */
+const avMode = () => (S.G && S.G.avMode) || "aesthetic";
+const imgTag = src => `<img src="${esc(src)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">`;
+function derivePic(name, handle, bio) { return `${String(handle || "").replace(/[^a-z]+/gi, " ")} ${String(bio || "").slice(0, 60)}`.trim() || String(name || ""); }
 function avatar(a, key, size = "", extra = "") {
-  const img = S.G && S.G.avatars === false ? "" : `<img src="${esc(avURL(a, key))}" alt="" loading="lazy" onerror="this.remove()">`;
-  return `<div class="av ${size} ${extra}" style="${avStyle(a, key)}" aria-hidden="true"><span>${esc((a && a.e) || "🙂")}</span>${img}</div>`;
+  const mode = avMode();
+  let img = "", wait = "";
+  if (a && a.img) img = imgTag(a.img);
+  else if (mode === "aesthetic" && a && a.pic) {
+    const u = PICS[a.pic];
+    if (u) img = imgTag(u); else if (u === undefined) { queuePic(a.pic); wait = ` data-avk="${"pk" + hashN(a.pic)}"`; }
+  } else if (mode === "cartoon") img = imgTag(avURL(a, key));
+  return `<div class="av ${size} ${extra}" style="${avStyle(a, key)}" aria-hidden="true"${wait}><span>${esc((a && a.e) || "🙂")}</span>${img}</div>`;
 }
 
 /* ================= icons ================= */
@@ -387,7 +403,7 @@ const CHEMS = ["Best friends", "Secret crush", "Shipped by fans", "Rivals", "Ene
 const IMG_STYLES = { photo: "candid smartphone photo, natural light, realistic, social media post", anime: "anime illustration, vibrant, detailed, key visual style", art: "digital painting, cinematic lighting, detailed illustration" };
 
 function newGlobal() {
-  return { v: 2, savedAt: 0, apiKey: "", model: "", gems: 30, theme: "", imgMode: "ai", avatars: true,
+  return { v: 2, savedAt: 0, apiKey: "", model: "", groqKey: "", groqModel: "", geminiKey: "", geminiModel: "", aiOrder: ["openrouter", "groq", "gemini"], gems: 30, theme: "", imgMode: "ai", avatars: true, avMode: "aesthetic",
     streak: { n: 0, last: "" }, ach: {}, library: [], worlds: [], req: { day: "", n: 0 },
     stats: { posts: 0, virals: 0, cancels: 0, events: 0, acts: 0 } };
 }
@@ -407,6 +423,7 @@ function pruneWorld(W) {
   W.notifs = W.notifs.slice(0, 80);
   W.log = W.log.slice(-45);
   W.stories = W.stories.filter(s => s.day >= W.day - 1).slice(-30);
+  const ks = Object.keys(W.npcs || {}); if (ks.length > 120) ks.sort((a, b) => W.npcs[a].seen - W.npcs[b].seen).slice(0, ks.length - 120).forEach(k => delete W.npcs[k]);
 }
 let tWorld = 0;
 function saveWorld() {
@@ -450,10 +467,12 @@ function setCloud(state, err) {
   if (S.sheet && S.sheet.fn === sheetAccount) refreshSheet();
 }
 /* what goes to the cloud: never the API key; request counts and the account owner are per device */
-function cloudMeta(G = S.G) { const m = JSON.parse(JSON.stringify(G)); delete m.apiKey; delete m.owner; delete m.req; return m; }
+const KEY_FIELDS = ["apiKey", "groqKey", "geminiKey"];
+function cloudMeta(G = S.G) { const m = JSON.parse(JSON.stringify(G)); for (const k of KEY_FIELDS) delete m[k]; delete m.owner; delete m.req; return m; }
+const localKeys = G => Object.fromEntries(KEY_FIELDS.map(k => [k, (G && G[k]) || ""]));
 function mergeMeta(local, remote, remoteWins) {
   const base = remoteWins ? remote : local, other = remoteWins ? local : remote;
-  const G = Object.assign(newGlobal(), base, { apiKey: local.apiKey, owner: local.owner, req: local.req || { day: "", n: 0 } });
+  const G = Object.assign(newGlobal(), base, localKeys(local), { owner: local.owner, req: local.req || { day: "", n: 0 } });
   G.stats = Object.assign(newGlobal().stats, base.stats);
   for (const k in (other.stats || {})) G.stats[k] = Math.max(num(G.stats[k]), num(other.stats[k]));
   G.ach = Object.assign({}, other.ach || {}, base.ach || {});
@@ -591,7 +610,7 @@ async function onAuth(ev, session) {
   const u = session && session.user;
   if (!u) { CLOUD.user = null; CLOUD.pulled = 0; setCloud("out"); daily(); render(); return; }
   if (CLOUD.user && CLOUD.user.id === u.id) return;   // token refresh, tab refocus
-  if (S.G.owner && S.G.owner !== u.id) { const key = S.G.apiKey, theme = S.G.theme; wipeLocal(); S.G = Object.assign(newGlobal(), { apiKey: key, theme }); }
+  if (S.G.owner && S.G.owner !== u.id) { const keys = localKeys(S.G), theme = S.G.theme; wipeLocal(); S.G = Object.assign(newGlobal(), keys, { theme }); }
   CLOUD.user = u;
   await cloudPull();
   daily();
@@ -605,65 +624,143 @@ function cloudLabel() {
 }
 const appURL = () => location.origin + location.pathname;
 
-/* ================= AI via OpenRouter ================= */
+/* ================= AI: OpenRouter, Groq and Gemini, with automatic fallback =================
+   All three speak the OpenAI chat format. The app asks the first provider in S.G.aiOrder; when it is
+   out of free requests (429/402) it cools that provider down and moves to the next. Keys live only
+   in this browser and are sent only to their own provider. */
 const OR = "https://openrouter.ai/api/v1";
+const PROV = {
+  openrouter: { name: "OpenRouter", url: OR + "/chat/completions", keyF: "apiKey", modelF: "model", def: "", keyUrl: "https://openrouter.ai/keys", hint: "sk-or-v1-…" },
+  groq: { name: "Groq", url: "https://api.groq.com/openai/v1/chat/completions", list: "https://api.groq.com/openai/v1/models", keyF: "groqKey", modelF: "groqModel", def: "llama-3.3-70b-versatile", keyUrl: "https://console.groq.com/keys", hint: "gsk_…" },
+  gemini: { name: "Gemini", url: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", list: "https://generativelanguage.googleapis.com/v1beta/openai/models", keyF: "geminiKey", modelF: "geminiModel", def: "gemini-2.5-flash", keyUrl: "https://aistudio.google.com/apikey", hint: "AIza…" }
+};
+const PROV_IDS = Object.keys(PROV);
 const SYS = "You are the hidden game engine of a social-media role-play simulator. You write what the simulated people post and say. You always answer with ONE valid JSON object and nothing else: no markdown fences, no commentary, no thinking out loud.";
+const provModel = p => S.G[PROV[p].modelF] || PROV[p].def;
+const aiOrder = () => { const o = (S.G.aiOrder || []).filter(x => PROV[x]); return [...o, ...PROV_IDS.filter(x => !o.includes(x))]; };
+const providerChain = () => aiOrder().filter(p => S.G[PROV[p].keyF] && provModel(p));
+const hasAI = () => providerChain().length > 0;
+/* providers that ran out of free requests rest until `until` (kept across reloads) */
+const COOL = LS.get("mc_cool") || {};
+const cooling = p => COOL[p] && COOL[p].until > Date.now();
+const BADKEY = {};   // keys a provider rejected this session: tried last, until the key is changed
+function coolDown(p, e) {
+  const daily = e.status === 402 || /per[- ]?day|daily|rpd|free-models-per-day|quota|exhausted|credits/i.test(String(e.message || ""));
+  let until = Date.now() + 60e3;
+  if (daily) { if (p === "openrouter") { const d = new Date(); d.setUTCHours(24, 0, 0, 0); until = +d; } else until = Date.now() + 60 * 60e3; }
+  COOL[p] = { until, daily }; LS.set("mc_cool", COOL);
+}
+/* models that refused JSON mode or the reasoning hint once are not sent them again */
+const NOPARAM = LS.get("mc_noparam") || {};
+/* close a reply that was cut off mid-way: finish the open string, drop a dangling key, close brackets */
+function closeJSON(t) {
+  const st = []; let inS = false, es = false;
+  for (const c of t) {
+    if (inS) { if (es) es = false; else if (c === "\\") es = true; else if (c === '"') inS = false; continue; }
+    if (c === '"') inS = true; else if (c === "{") st.push("}"); else if (c === "[") st.push("]"); else if (c === "}" || c === "]") st.pop();
+  }
+  let out = t + (inS ? '"' : "");
+  out = out.replace(/,\s*"[^"]*"\s*:?\s*$/, "").replace(/:\s*$/, ": null").replace(/,\s*$/, "");
+  return out + st.reverse().join("");
+}
 function parseJSON(text) {
   let t = String(text || "").replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
-  const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/i); if (fence) t = fence[1];
+  const fence = t.match(/```(?:json)?\s*([\s\S]*?)(```|$)/i); if (fence) t = fence[1];
   const a = t.indexOf("{"), b = t.lastIndexOf("}");
-  if (a < 0 || b <= a) return null;
-  const body = t.slice(a, b + 1);
-  for (const s of [body, body.replace(/,\s*([}\]])/g, "$1")]) { try { return JSON.parse(s); } catch { } }
+  if (a < 0) return null;
+  const tries = [];
+  if (b > a) { const body = t.slice(a, b + 1); tries.push(body, body.replace(/,\s*([}\]])/g, "$1")); }
+  tries.push(closeJSON(t.slice(a)).replace(/,\s*([}\]])/g, "$1"));   // repaired locally instead of spending another request
+  for (const x of tries) { try { const o = JSON.parse(x); if (o && typeof o === "object") return o; } catch { } }
   return null;
 }
-async function orCall(messages, maxTokens) {
-  const G = S.G;
+async function callProvider(p, messages, maxTokens) {
+  const P = PROV[p], model = provModel(p), np = p + "|" + model;
+  const body = { model, messages, temperature: 0.9, max_tokens: maxTokens };
+  if (!NOPARAM[np + "|json"]) body.response_format = { type: "json_object" };   // valid JSON first time: no repair round-trips
+  if (p === "gemini" && !NOPARAM[np + "|re"]) body.reasoning_effort = "low";    // keep "thinking" from eating the reply
   let res;
-  try {
-    res = await fetch(OR + "/chat/completions", {
-      method: "POST",
-      headers: { "Authorization": "Bearer " + G.apiKey, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: G.model, messages, temperature: 0.9, max_tokens: maxTokens })
-    });
-  } catch { throw { code: "network" }; }
-  const data = await res.json().catch(() => null);
-  countRequest();
-  if (!res.ok || (data && data.error)) throw { code: (data && data.error && data.error.code) || res.status, status: res.status, message: (data && data.error && data.error.message) || res.statusText };
+  try { res = await fetch(P.url, { method: "POST", headers: { "Authorization": "Bearer " + S.G[P.keyF], "Content-Type": "application/json" }, body: JSON.stringify(body) }); }
+  catch { throw { code: "network", p }; }
+  const raw = await res.json().catch(() => null), data = Array.isArray(raw) ? raw[0] : raw, err = data && data.error;
+  countRequest(p);
+  if (!res.ok || err) {
+    const msg = String((err && (err.message || err.status)) || res.statusText || "");
+    if ((res.status === 400 || res.status === 404) && body.response_format && /response_format|json_object|json mode|requested parameters|structured/i.test(msg)) { NOPARAM[np + "|json"] = 1; LS.set("mc_noparam", NOPARAM); return callProvider(p, messages, maxTokens); }
+    if (res.status === 400 && body.reasoning_effort && /reasoning|thinking/i.test(msg)) { NOPARAM[np + "|re"] = 1; LS.set("mc_noparam", NOPARAM); return callProvider(p, messages, maxTokens); }
+    throw { code: (err && err.code) || res.status, status: res.status, message: msg, p };
+  }
   const ch = data && data.choices && data.choices[0];
-  if (ch && ch.error) throw { code: ch.error.code || "provider", message: ch.error.message };
+  if (ch && ch.error) throw { code: ch.error.code || "provider", message: ch.error.message, p };
   return (ch && ch.message && ch.message.content) || "";
 }
 async function ai(prompt, size) {
-  const G = S.G;
-  if (!G.apiKey) { openApi("Add your OpenRouter key to start playing."); throw { code: "nokey", quiet: true }; }
-  if (!G.model) { openApi("Pick a model first."); throw { code: "nomodel", quiet: true }; }
+  const chain = providerChain();
+  if (!chain.length) { openApi("Add a free AI key (OpenRouter, Groq or Gemini) to start playing."); throw { code: "nokey", quiet: true }; }
   const maxT = size === "big" ? 5000 : 2200;
   const msgs = [{ role: "system", content: SYS }, { role: "user", content: prompt }];
+  // providers that are resting go last: they are only tried when everything else failed
+  const rest = p => cooling(p) || BADKEY[p];
+  const order = [...chain.filter(p => !rest(p)), ...chain.filter(rest)];
+  let lastErr = null;
   try {
-    const text = await orCall(msgs, maxT);
-    let obj = parseJSON(text);
-    if (!obj) {
-      const again = await orCall([...msgs, { role: "assistant", content: String(text).slice(0, 4000) || "(empty)" }, { role: "user", content: "That was not a valid JSON object. Reply again with ONLY the JSON object, complete and valid." }], maxT);
-      obj = parseJSON(again);
+    for (const p of order) {
+      try {
+        const text = await callProvider(p, msgs, maxT);
+        let obj = parseJSON(text);
+        if (!obj) obj = parseJSON(await callProvider(p, [...msgs, { role: "assistant", content: String(text).slice(0, 4000) || "(empty)" }, { role: "user", content: "That was not a valid JSON object. Reply again with ONLY the JSON object, complete and valid." }], maxT));
+        if (!obj) throw { code: "badjson", p };
+        if (COOL[p]) { delete COOL[p]; LS.set("mc_cool", COOL); }
+        delete BADKEY[p];
+        if (S.lastProv && S.lastProv !== p) toast(`Now using ${PROV[p].name}` + (cooling(S.lastProv) ? ` (${PROV[S.lastProv].name}'s free requests ran out)` : ""));
+        S.lastProv = p;
+        return obj;
+      } catch (e) {
+        lastErr = e;
+        if (e.code === "network") throw e;
+        const st = e.status;
+        if (st === 429 || st === 402) { coolDown(p, e); continue; }                       // out of free requests: next provider
+        if (st === 401 || st === 403 || (st === 400 && /api key/i.test(e.message || ""))) { e.badKey = BADKEY[p] = true; continue; }
+        if (st === 404 || st === 408 || st >= 500 || e.code === "provider" || e.code === "badjson") continue;   // that model is struggling: let another try
+        throw e;
+      }
     }
-    if (!obj) throw { code: "badjson" };
-    return obj;
-  } finally { refreshKeySoon(); }
+    throw lastErr || { code: "nokey" };
+  } finally { if (S.G.apiKey) refreshKeySoon(); renderMeter(); }
 }
 function aiErr(e) {
   if (e && e.quiet) return null;
-  const c = e && (e.status || e.code);
-  if (c === "network") return "Can't reach OpenRouter. Check your internet connection.";
-  if (c === 401 || c === 403) return "OpenRouter rejected the API key. Check it in API & usage.";
-  if (c === 402) return "Not enough credits for this model. Pick a free (:free) model in API & usage.";
-  if (c === 429) return "Rate limit hit. Free models allow 20 requests a minute and a daily cap. Wait a bit or switch model.";
-  if (c === 404) return "This model isn't available right now. Pick another one in API & usage.";
-  if (c === 408 || c === 502 || c === 503 || c === 504 || c === "provider") return "The model's provider is busy. Try again or pick another free model.";
-  if (c === "badjson") return "The model replied in the wrong format twice. Try again, or pick a stronger model.";
+  const c = e && (e.status || e.code), who = e && e.p && PROV[e.p] ? PROV[e.p].name : "The AI provider", many = providerChain().length > 1;
+  if (c === "network") return "Can't reach the AI. Check your internet connection.";
+  if (e.badKey || c === 401 || c === 403) return `${who} rejected the API key. Check it in AI providers.`;
+  if (c === 402 || c === 429) return many ? "Every AI provider you added is out of free requests right now. Wait a little, or add another one in AI providers." : `${who}'s free requests are used up for now. Add Groq or Gemini in AI providers to keep playing.`;
+  if (c === 404) return `${who} doesn't have this model right now. Pick another one in AI providers.`;
+  if (c === 408 || c === 502 || c === 503 || c === 504 || c === "provider") return "The AI is busy. Try again, or pick another model.";
+  if (c === "badjson") return "The AI replied in the wrong format. Try again, or pick a stronger model.";
   return "AI error: " + ((e && e.message) || "unknown") + ". Try again.";
 }
-function countRequest() { const r = S.G.req; const t = todayKey(); if (r.day !== t) { r.day = t; r.n = 0; } r.n++; saveMeta(); }
+function countRequest(p) { const r = S.G.req; const t = todayKey(); if (r.day !== t) { r.day = t; r.n = 0; r.by = {}; } r.n++; r.by = r.by || {}; r.by[p] = (r.by[p] || 0) + 1; saveMeta(); }
+/* Groq and Gemini model lists (need the key) */
+async function loadProvModels(p) {
+  const P = PROV[p]; if (!P.list || !S.G[P.keyF]) return;
+  S.pmodels = S.pmodels || {};
+  try {
+    const r = await fetch(P.list, { headers: { "Authorization": "Bearer " + S.G[P.keyF] } });
+    const raw = await r.json(), d = Array.isArray(raw) ? raw[0] : raw;
+    if (!r.ok || d.error) throw d.error || {};
+    let ids = (d.data || []).map(m => String(m.id).replace(/^models\//, ""));
+    ids = p === "groq" ? ids.filter(x => !/whisper|tts|guard|playai|orpheus|compound|distil/i.test(x))
+      : ids.filter(x => /gemini/i.test(x) && !/embed|image|tts|audio|live|vision|aqa|imagen|veo|robotics/i.test(x));
+    S.pmodels[p] = ids.sort();
+    if (!ids.includes(provModel(p)) || !S.G[P.modelF]) { S.G[P.modelF] = pickProvModel(p, ids) || PROV[p].def; saveMeta(); }
+  } catch (e) { S.pmodels[p] = []; }
+}
+function pickProvModel(p, ids) {
+  if (p === "groq") { for (const x of ["llama-3.3-70b-versatile", "openai/gpt-oss-120b", "moonshotai/kimi-k2", "meta-llama/llama-4-maverick", "qwen/qwen3-32b"]) { const m = ids.find(i => i.startsWith(x)); if (m) return m; } return ids[0]; }
+  const ver = x => parseFloat((x.match(/gemini-(\d+(\.\d+)?)/) || [])[1] || 0);
+  const flash = ids.filter(x => /flash/.test(x) && !/lite|preview|exp|thinking/.test(x)).sort((a, b) => ver(b) - ver(a) || a.length - b.length);
+  return flash[0] || ids.filter(x => /flash/.test(x)).sort((a, b) => ver(b) - ver(a))[0] || ids[0];
+}
 async function refreshKey() {
   if (!S.G.apiKey) { S.key = null; return; }
   try {
@@ -703,8 +800,9 @@ function pickDefaultModel() {
 /* the "energy" bar: what is left on the OpenRouter key */
 function isFreeModel() { return /:free$/.test(S.G.model || "") || !!(S.models && S.models.some(m => m.id === S.G.model)); }
 function meterInfo() {
-  const k = S.key;
-  if (!S.G.apiKey) return { label: "Add key", title: "Add your OpenRouter key" };
+  const k = S.key, chain = providerChain(), cur = chain.find(p => !cooling(p) && !BADKEY[p]) || chain[0];
+  if (!cur) return { label: "Add key", title: "Add a free AI key" };
+  if (cur !== "openrouter") { const n = S.G.req.day === todayKey() && S.G.req.by ? S.G.req.by[cur] || 0 : 0; return { label: PROV[cur].name, title: `Using ${PROV[cur].name} (${n} requests today)` }; }
   if (!k) return { label: "…", title: "Checking your key" };
   if (k.error) return { label: "!", title: k.error };
   const fr = k.free_model_daily_requests;
@@ -726,10 +824,11 @@ function ctx(W, opts = {}) {
   const chars = W.chars.filter(c => c.unlocked || c.kind === "news");
   const recent = W.posts.slice(0, opts.posts ?? 8).map(p => postLine(W, p)).join("\n");
   const mem = W.log.slice(-25).map(l => "- " + l).join("\n");
+  const npcs = Object.values(W.npcs || {}).sort((a, b) => b.seen - a.seen).slice(0, opts.npcs ?? 14).map(n => `- @${n.h} (${n.n})${n.bio ? ": " + n.bio : ""}`).join("\n");
   return `WORLD: ${W.name} — ${W.desc}
 FANDOM/SETTING: ${W.fandom || W.name}
-DRAMA LEVEL (1-5): ${W.madness} = ${MADNESS[W.madness]}${W.muteNews ? "\nNews/gossip accounts are MUTED: never generate news posts." : ""}
-IN-WORLD DAY: ${W.day}
+${W.sandbox || W.lore ? "CANON & LORE (follow strictly):\n" + (W.sandbox ? sandboxLore(W) : W.lore) + "\n" : ""}DRAMA LEVEL (1-5): ${W.madness} = ${MADNESS[W.madness]}${W.muteNews ? "\nNews/gossip accounts are MUTED: never generate news posts." : ""}
+IN-WORLD DAY: ${W.day}${W.calendar ? " (" + dateLabel(W) + ")" : ""}
 PLAYER: ${me.name} (@${me.handle}). Bio: ${me.bio || "-"}. Vibe: ${me.vibe || "-"}. ${me.look ? "Looks: " + me.look + ". " : ""}Followers ${me.followers}, humor ${Math.round(me.humor)}, aura ${Math.round(me.aura)}, level ${me.level}.
 PLAYER GOAL: ${me.goal || "-"}
 PLAYER SKILLS: ${me.skills.map(s => `${s.name} lv${s.lv}`).join(", ")}
@@ -737,11 +836,16 @@ CHARACTERS IN THE PLAYER'S CIRCLE:
 ${chars.map(charLine).join("\n") || "-"}
 STORY MEMORY (oldest first):
 ${mem || "- (the story just started)"}
+RECURRING ACCOUNTS (random people already in this world):
+${npcs || "- (none yet)"}
 RECENT FEED:
 ${recent || "(empty)"}
 ${LANG_RULE}
 Stay in the world's tone. Characters remember the story memory and act consistently. Keep it suitable for ages 13+ (no explicit sexual content, no graphic violence).`;
 }
+/* worlds with a real calendar (e.g. canon timelines): each in-world day moves the date by dayStep days */
+function worldDate(W, day = W.day) { if (!W.calendar) return null; const d = new Date(W.calendar + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + (day - 1) * (W.dayStep || 1)); return d; }
+function dateLabel(W, day) { const d = worldDate(W, day); return d ? d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }) : ""; }
 function handleOf(W, a) {
   if (a === "me") return W.me.handle;
   if (typeof a === "object" && a) return a.h || "user";
@@ -751,13 +855,36 @@ function findCharByHandle(W, h) {
   h = String(h || "").replace(/^@/, "").toLowerCase();
   return W.chars.find(c => c.handle.toLowerCase() === h) || W.chars.find(c => c.name.toLowerCase() === h);
 }
-function authorFrom(W, h, name) {
+/* random accounts are remembered per world (W.npcs, keyed by lowercase handle) so the same
+   handle keeps the same name, bio, profile picture and personality every time it shows up */
+const NPC_EMOJI = ["🙂", "😎", "🫠", "👀", "🐱", "🌸", "🍜", "🎧", "🧃", "💅", "🤡", "🐸"];
+function rememberNPC(W, handle, name, x = {}) {
+  const k = handle.toLowerCase(); W.npcs = W.npcs || {};
+  let n = W.npcs[k];
+  if (!n) n = W.npcs[k] = { h: handle, n: String(name || handle).slice(0, 40), e: pick(NPC_EMOJI), c: hashN(handle) % COLORS.length, st: AV_STYLES[hashN(handle + "x") % AV_STYLES.length], bio: "", pic: "", picAuto: false, first: W.day, seen: 0 };
+  if (x.bio && typeof x.bio === "string" && !n.bio) n.bio = x.bio.slice(0, 160);
+  if (x.pic && typeof x.pic === "string" && (!n.pic || n.picAuto)) { n.pic = x.pic.slice(0, 200); n.picAuto = false; }
+  if (!n.pic) { n.pic = derivePic(n.n, n.h, n.bio); n.picAuto = true; }
+  n.seen = Date.now();
+  return n;
+}
+const npcAuthor = n => ({ h: n.h, n: n.n, e: n.e, c: n.c, st: n.st, pic: n.pic });
+const cleanHandle = h => String(h || "").replace(/^@/, "").replace(/\s+/g, "").slice(0, 24);
+function authorFrom(W, h, name, x) {
   const c = findCharByHandle(W, h);
   if (c) return c.id;
-  const handle = String(h || "user" + rnd(100, 9999)).replace(/^@/, "").replace(/\s+/g, "").slice(0, 24) || "user";
-  return { h: handle, n: String(name || handle).slice(0, 40), e: pick(["🙂", "😎", "🫠", "👀", "🐱", "🌸", "🍜", "🎧", "🧃", "💅", "🤡", "🐸"]), c: hashN(handle) % COLORS.length, st: AV_STYLES[hashN(handle + "x") % AV_STYLES.length] };
+  return npcAuthor(rememberNPC(W, cleanHandle(h) || "user" + rnd(100, 9999), name, x || {}));
 }
-const mkImg = d => d && typeof d === "string" && d.trim() ? { d: d.trim().slice(0, 300), s: rnd(1, 999999) } : null;
+/* a random account becomes a full character (follows you, has DMs) when it slides into your DMs or you follow it */
+function promoteNPC(W, handle, name, x = {}) {
+  const ex = findCharByHandle(W, handle); if (ex) return ex;
+  const n = rememberNPC(W, cleanHandle(handle) || "user" + rnd(100, 9999), name, x);
+  const c = { id: uid("c"), name: n.n, handle: n.h, bio: n.bio, desc: `${n.bio || "A random account in this world"}. Talks and posts in a voice that matches their handle, bio and the topics they care about.`, look: "",
+    av: { e: n.e, c: n.c, st: n.st, pic: n.pic }, followers: rnd(40, 4000), unlocked: true, followsMe: true, iFollow: true, kind: "char", npc: true, rel: 5, chem: "" };
+  W.chars.push(c);
+  return c;
+}
+const mkImg = (d, k) => d && typeof d === "string" && d.trim() ? Object.assign({ d: d.trim().slice(0, 300), s: rnd(1, 999999) }, k && typeof k === "string" ? { k: k.slice(0, 60) } : {}) : null;
 /* ================= photos in posts & stories =================
    AI mode: Pollinations (free, no key) renders the exact picture the AI described.
    The free tier is rate-limited per IP, so pictures load one at a time through a queue
@@ -766,7 +893,7 @@ const mkImg = d => d && typeof d === "string" && d.trim() ? { d: d.trim().slice(
 const IMGS = LS.get("mc_imgs") || {};          // seed -> 1 (AI ok) | 2 (fell back to stock)
 const IMGQ = { q: [], running: false, gap: 3000, tries: {}, pending: {} };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-function saveImgs() { const k = Object.keys(IMGS); if (k.length > 600) for (const x of k.slice(0, k.length - 600)) delete IMGS[x]; LS.set("mc_imgs", IMGS); }
+function saveImgs() { const k = Object.keys(IMGS); if (k.length > 1500) for (const x of k.slice(0, k.length - 1500)) delete IMGS[x]; LS.set("mc_imgs", IMGS); }
 function aiImgURL(img, w, h) {
   const style = IMG_STYLES[(S.W && S.W.imgStyle) || "photo"] || IMG_STYLES.photo;
   return `https://image.pollinations.ai/prompt/${encodeURIComponent(img.d + ", " + style)}?width=${w}&height=${h}&seed=${img.s}&nologo=true&model=flux&referrer=main-character-sim`;
@@ -775,7 +902,8 @@ const stockURL = (img, w, h) => `https://picsum.photos/seed/${img.s}/${w}/${h}`;
 function imgSrc(img, w = 768, h = 768) {
   if (!img || S.G.imgMode === "off") return null;
   if (S.G.imgMode === "stock" || IMGS[img.s] === 2) return stockURL(img, w, h);
-  if (IMGS[img.s] === 1) return aiImgURL(img, w, h);
+  if (IMGS[img.s] === 3 && PICS["post:" + img.s]) return PICS["post:" + img.s];
+  if (IMGS[img.s] === 1 && !S.polliDown) return aiImgURL(img, w, h);
   queueImg(img, w, h);
   return null;
 }
@@ -785,31 +913,93 @@ function photoHTML(img) {
   if (src) return `<div class="pimg"><img src="${esc(src)}" alt="${esc(img.d)}" loading="lazy" data-is="${img.s}" onerror="imgFail(this)"></div>`;
   return `<div class="pimg ph" data-ik="${img.s}" title="${esc(img.d)}"><span><b>📷</b>${esc(img.d)}</span></div>`;
 }
+/* phrase -> photo on Wikimedia Commons. Tries the phrase, then word pairs, then single words,
+   so "glowing enchanted bonsai tree" still lands on a bonsai. Cached per phrase ("" = none found). */
+const PICS = LS.get("mc_pics") || {};
+const PICQ = { q: [], pending: {}, running: false };
+const STOPW = new Set("a an the of in on at by with and or to for from under over into onto beside near its their his her one some very soft warm cold dim pale tiny small big little".split(" "));
+function picQueries(d) {
+  const w = String(d).toLowerCase().replace(/[^a-z\s-]/g, " ").split(/\s+/).filter(x => x.length > 2 && !STOPW.has(x)).slice(0, 6), q = [];
+  if (w.length > 1) q.push(w.slice(0, 3).join(" "));
+  for (let i = w.length - 2; i >= 0; i--) q.push(w[i] + " " + w[i + 1]);   // English noun phrases end in the noun
+  q.push(...[...w].sort((a, b) => b.length - a.length));                    // then the most specific single words
+  return [...new Set(q)].slice(0, 7);
+}
+async function commonsPhoto(d, w = 256) {
+  const qs = picQueries(d); if (!qs.length) return "";
+  // 1) a Wikipedia article named by the phrase or part of it: curated, representative lead photos
+  const th = await wikiThumbs(qs);
+  for (const q of qs) if (th[q]) return th[q];
+  // 2) otherwise search Commons files whose titles contain every word
+  for (const q of qs.slice(0, 2)) {
+    const r = await wikiJSON(COMMONS, { action: "query", generator: "search", gsrsearch: "filetype:bitmap " + q, gsrnamespace: "6", gsrlimit: "8", prop: "imageinfo", iiprop: "url", iiurlwidth: String(w) });
+    const stems = q.split(" ").map(x => x.slice(0, 5));
+    const urls = Object.values((r.query && r.query.pages) || {}).sort((a, b) => a.index - b.index)
+      .filter(p => { const t = p.title.toLowerCase(); return stems.every(x => t.includes(x)); })
+      .map(p => p.imageinfo && p.imageinfo[0] && p.imageinfo[0].thumburl).filter(u => u && /\.(jpe?g|png|webp)(\?|$)/i.test(u));
+    if (urls.length) return urls[hashN(d) % Math.min(urls.length, 3)];
+  }
+  return "";
+}
+function queuePic(d, done) {
+  if (PICS[d] !== undefined) { if (done) done(PICS[d]); return; }
+  (PICQ.pending[d] = PICQ.pending[d] || []).push(done || null);
+  if (PICQ.pending[d].length === 1) PICQ.q.push(d);
+  pumpPics();
+}
+async function pumpPics() {
+  if (PICQ.running) return; PICQ.running = true;
+  while (PICQ.q.length) {
+    const d = PICQ.q.shift();
+    let url;
+    try { url = await commonsPhoto(d); } catch { url = undefined; }
+    if (url !== undefined) { PICS[d] = url; savePics(); }
+    swapAv("pk" + hashN(d), url);
+    for (const f of PICQ.pending[d] || []) if (f) f(url || "");
+    delete PICQ.pending[d];
+    await sleep(url === undefined ? 4000 : 150);   // back off when Wikimedia is unreachable
+  }
+  PICQ.running = false;
+}
+function savePics() { const k = Object.keys(PICS); if (k.length > 2000) for (const x of k.slice(0, k.length - 2000)) delete PICS[x]; LS.set("mc_pics", PICS); }
+function swapAv(k, url) { document.querySelectorAll(`[data-avk="${k}"]`).forEach(el => { el.removeAttribute("data-avk"); if (url) el.insertAdjacentHTML("beforeend", imgTag(url)); }); }
+/* Pollinations now asks anonymous apps for a token; check once, and if it refuses,
+   post photos come from Wikimedia Commons (matched to the description), then stock */
+function checkPolli() {
+  return S.polliP || (S.polliP = fetch(aiImgURL({ d: "test", s: 1 }, 64, 64)).then(r => { if (!r.ok) S.polliDown = true; }, () => { }));
+}
+function photoFromCommons(job) {
+  const s = job.img.s;
+  queuePic(job.img.k || job.img.d, url => { IMGS[s] = url ? 3 : 2; PICS["post:" + s] = url || ""; swapIn(s, url || stockURL(job.img, job.w, job.h)); delete IMGQ.pending[s]; saveImgs(); });
+}
 function queueImg(img, w, h) {
   if (IMGQ.pending[img.s]) return;
   IMGQ.pending[img.s] = true;
-  IMGQ.q.push({ img: { d: img.d, s: img.s }, w, h });
+  IMGQ.q.push({ img: { d: img.d, s: img.s, k: img.k }, w, h });
   pumpImgs();
 }
 async function pumpImgs() {
   if (IMGQ.running) return; IMGQ.running = true;
+  await checkPolli();   // find out first whether Pollinations still lets us in
   while (IMGQ.q.length) {
-    const job = IMGQ.q.shift(), url = aiImgURL(job.img, job.w, job.h);
+    if (S.G.imgMode !== "ai") break;
+    if (S.polliDown) { for (const j of IMGQ.q.splice(0)) photoFromCommons(j); break; }
+    const job = IMGQ.q.shift(), url = aiImgURL(job.img, job.w, job.h), key = job.img.s;
     const ok = await new Promise(res => {
       const im = new Image(); const t = setTimeout(() => { im.src = ""; res(false); }, 90000);
       im.onload = () => { clearTimeout(t); res(im.naturalWidth > 0); };
       im.onerror = () => { clearTimeout(t); res(false); };
       im.src = url;
     });
-    if (ok) { IMGS[job.img.s] = 1; IMGQ.gap = Math.max(2500, IMGQ.gap * 0.8); swapIn(job.img.s, url); delete IMGQ.pending[job.img.s]; }
+    if (ok) { IMGS[key] = 1; IMGQ.gap = Math.max(2500, IMGQ.gap * 0.8); swapIn(key, url); delete IMGQ.pending[key]; }
     else {
-      const n = (IMGQ.tries[job.img.s] || 0) + 1; IMGQ.tries[job.img.s] = n;
+      const n = (IMGQ.tries[key] || 0) + 1; IMGQ.tries[key] = n;
       IMGQ.gap = Math.min(60000, IMGQ.gap * 2);
+      if (S.polliDown) { photoFromCommons(job); continue; }
       if (n < 3) IMGQ.q.push(job);
-      else { IMGS[job.img.s] = 2; swapIn(job.img.s, stockURL(job.img, job.w, job.h)); delete IMGQ.pending[job.img.s]; }
+      else { IMGS[key] = 2; swapIn(key, stockURL(job.img, job.w, job.h)); delete IMGQ.pending[key]; }
     }
     saveImgs();
-    if (S.G.imgMode !== "ai") break;
     await sleep(IMGQ.gap);
   }
   IMGQ.running = false;
@@ -822,9 +1012,14 @@ function swapIn(seed, url) {
   document.querySelectorAll(`[data-ikbg="${seed}"]`).forEach(el => { el.insertAdjacentHTML("afterbegin", `<img class="sv-photo" src="${esc(url)}" alt="">`); el.classList.add("photo"); });
 }
 window.imgFail = function (el) {
-  const s = el.dataset.is; el.onerror = null;
+  const s = el.dataset.is, d = el.alt; el.onerror = null;
+  const stock = `https://picsum.photos/seed/${s}/768/768`;
+  if (IMGS[s] === 1 && d) {   // a Pollinations picture that no longer loads: find a matching photo instead
+    S.polliDown = true;
+    return queuePic(d, url => { IMGS[s] = url ? 3 : 2; PICS["post:" + s] = url || ""; saveImgs(); el.src = url || stock; });
+  }
   if (IMGS[s] === 1) { IMGS[s] = 2; saveImgs(); }
-  el.src = `https://picsum.photos/seed/${s}/768/768`;
+  el.src = stock;
 };
 /* ================= game rules ================= */
 const xpNeed = lv => 60 + lv * 40;
@@ -858,14 +1053,15 @@ function totalUps(me) { return me.skills.reduce((s, k) => s + (k.lv - 1), 0); }
 function upgradeSkill(i) {
   const me = S.W.me; if (me.sp < 1) return toast("No skill points yet. Earn XP by posting, replying, events and activities.");
   const sk = me.skills[i]; if (!sk || sk.lv >= 10) return;
+  snapshot();
   me.sp--; sk.lv++;
   const ups = totalUps(me);
   me.milestones.forEach((m, j) => {
     if (!m.done && ups >= (j + 1) * 2) {
-      m.done = true; me.unlocks++; S.G.gems += 5;
-      notify("milestone", `Milestone cleared: ${m.t} · you can unlock 1 new character`);
+      m.done = true; S.G.gems += 5;
+      notify("milestone", `Milestone cleared: ${m.t} · +5 gems`);
       remember(`${me.name} reached a milestone: "${m.t}"`);
-      setTimeout(() => toast("Milestone cleared! Unlock a new character on your profile"), 400);
+      setTimeout(() => toast(`Milestone cleared: ${m.t} · +5 gems`), 400);
     }
   });
   checkAch(); saveWorld(); render();
@@ -892,9 +1088,9 @@ function addPosts(list, tag) {
   const W = S.W, made = [];
   for (const x of (Array.isArray(list) ? list : [])) {
     if (!x || !x.text) continue;
-    const a = authorFrom(W, x.handle, x.name);
+    const a = authorFrom(W, x.handle, x.name, x);
     const base = typeof a === "string" ? (W.chars.find(c => c.id === a)?.followers || 500) : rnd(50, 3000);
-    const p = { id: uid("p"), a, t: String(x.text), img: mkImg(x.image), day: W.day, ts: Date.now() + made.length, likes: Math.round(base * (0.01 + Math.random() * 0.08)), rts: rnd(0, 40), views: Math.round(base * (0.3 + Math.random() * 1.5)), replies: [], tag: tag || null };
+    const p = { id: uid("p"), a, t: String(x.text), img: mkImg(x.image, x.image_tags), day: W.day, ts: Date.now() + made.length, likes: Math.round(base * (0.01 + Math.random() * 0.08)), rts: rnd(0, 40), views: Math.round(base * (0.3 + Math.random() * 1.5)), replies: [], tag: tag || null };
     W.posts.unshift(p); made.push(p);
   }
   return made;
@@ -902,7 +1098,10 @@ function addPosts(list, tag) {
 function pushDM(cid, f, t) { const W = S.W; (W.dms[cid] || (W.dms[cid] = [])).push({ f, t, day: W.day, ts: Date.now() }); }
 function proactiveDM(dm) {
   if (!dm || !dm.text) return;
-  const c = findCharByHandle(S.W, dm.handle); if (!c || !c.unlocked || c.kind === "news") return;
+  const W = S.W;
+  let c = findCharByHandle(W, dm.handle);
+  if (c && (c.kind === "news" || !c.unlocked)) return;
+  if (!c) { if (!dm.handle) return; c = promoteNPC(W, dm.handle, dm.name, dm); }   // a new account slides into your DMs
   pushDM(c.id, "them", String(dm.text));
   notify("dm", `${c.name} sent you a message`, { dm: c.id });
 }
@@ -941,8 +1140,10 @@ function checkAch() {
 }
 
 /* ================= AI actions ================= */
-const REPLY_SHAPE = `{"handle":"@handle of a listed character, or a NEW random account handle","name":"display name (needed for random accounts)","text":"reply text"}`;
-const POST_SHAPE = `{"handle":"@handle","name":"display name for random accounts","text":"post text","image":"photo description or null"}`;
+const REPLY_SHAPE = `{"handle":"@handle of a listed character, a recurring account, or a NEW account","name":"display name","text":"reply text","bio":"NEW accounts only","pic":"NEW accounts only"}`;
+const POST_SHAPE = `{"handle":"@handle","name":"display name","text":"post text","image":"photo description or null","image_tags":"2-3 word photo-search phrase for that photo, or null","bio":"NEW accounts only","pic":"NEW accounts only"}`;
+const DM_SHAPE = `{"handle":"@listed character, or a random/recurring account who would slide into the player's DMs","name":"display name","bio":"NEW accounts only","pic":"NEW accounts only","text":"private message to the player"}`;
+const CROWD_RULE = `RANDOM ACCOUNTS: most of the crowd are random accounts who belong in this world and care about the topic at hand. Each one has ONE clear identity: handle, display name, bio, profile picture and posts all match (e.g. someone obsessed with magical plants posts as @magical_plant_freak, bio "my mandrakes are my children", pic "bonsai tree"). When the player posts about something, people who care about it show up. Reuse RECURRING ACCOUNTS when they fit and keep them consistent; invent new ones when the topic calls for it. For every NEW account give "bio" (max 80 chars) and "pic" (their profile picture as a 2-4 word photo-search phrase naming one real object, animal or place that fits them, e.g. "bonsai tree", "black kitten", "old cauldron", "owl at night"; never a person or a name). Canon or listed characters never need bio or pic.`;
 function failed(e) { const m = aiErr(e); if (m) toast(m); }
 
 async function makePost(text, photo) {
@@ -975,16 +1176,17 @@ Reply with ONLY this JSON:
 "relationship_changes":[{"handle":"@...","change":0,"reason":"short"}],
 "character_posts":[${POST_SHAPE}],
 "news_post":${POST_SHAPE} or null,
-"dm":{"handle":"@listed character","text":"private message to the player"} or null,
+"dm":${DM_SHAPE} or null,
 "memory":"one sentence recording what happened"}
-Rules: 3-7 replies mixing listed characters (only ones who would plausibly see it) and random accounts. humor_change and aura_change between -10 and 10. relationship change between -15 and 15. character_posts 0-2 (only listed characters). dm only if it really fits.`;
+${CROWD_RULE}
+Rules: 3-7 replies, mostly random accounts (recurring or new) plus listed characters who would plausibly see it. humor_change and aura_change between -10 and 10. relationship change between -15 and 15. character_posts 0-2 (only listed characters). dm only if it really fits.`;
   try {
     const r = await ai(prompt);
     const out = ["viral", "flop", "drama", "cancelled"].includes(r.outcome) ? r.outcome : "normal";
     p.pending = false;
     p.likes = Math.max(0, Math.round(num(r.likes))); p.rts = Math.max(0, Math.round(num(r.reposts))); p.views = Math.max(p.likes, Math.round(num(r.views)));
     if (out !== "normal") p.tag = out;
-    for (const x of (r.replies || []).slice(0, 8)) if (x && x.text) p.replies.push({ id: uid("r"), a: authorFrom(W, x.handle, x.name), t: String(x.text), likes: rnd(0, Math.max(3, p.likes / 8)), ts: Date.now() });
+    for (const x of (r.replies || []).slice(0, 8)) if (x && x.text) p.replies.push({ id: uid("r"), a: authorFrom(W, x.handle, x.name, x), t: String(x.text), likes: rnd(0, Math.max(3, p.likes / 8)), ts: Date.now() });
     const d = applyStats(r, useClout ? 2 : 1);
     const rels = applyRels(r.relationship_changes);
     addPosts(r.character_posts);
@@ -1018,7 +1220,8 @@ Replies so far (oldest first):
 ${thread}
 
 The player (@${W.me.handle}) just replied: "${mine.t}"
-Simulate 1-4 follow-up replies in this thread (the original poster usually answers if they are a character; others may pile on).
+Simulate 1-4 follow-up replies in this thread (the original poster usually answers; others may pile on).
+${CROWD_RULE}
 Reply with ONLY this JSON:
 {"replies":[${REPLY_SHAPE}],"likes_on_player_reply":0,"humor_change":0,"aura_change":0,"followers_change":0,
 "relationship_changes":[{"handle":"@...","change":0,"reason":"short"}],"memory":"one sentence, or empty if nothing notable"}`;
@@ -1026,7 +1229,7 @@ Reply with ONLY this JSON:
     const r = await ai(prompt);
     const live = S.W.posts.find(x => x.id === postId);
     const me2 = live.replies.find(x => x.id === mine.id); if (me2) me2.likes = Math.max(0, Math.round(num(r.likes_on_player_reply)));
-    for (const x of (r.replies || []).slice(0, 5)) if (x && x.text) live.replies.push({ id: uid("r"), a: authorFrom(S.W, x.handle, x.name), t: String(x.text), likes: rnd(0, 60), ts: Date.now() });
+    for (const x of (r.replies || []).slice(0, 5)) if (x && x.text) live.replies.push({ id: uid("r"), a: authorFrom(S.W, x.handle, x.name, x), t: String(x.text), likes: rnd(0, 60), ts: Date.now() });
     const d = applyStats(r); const rels = applyRels(r.relationship_changes);
     if (r.memory) remember(r.memory);
     addXP(10); checkAch(); saveWorld();
@@ -1072,35 +1275,39 @@ messages: 0-4 short bubbles. relationship_change between -10 and 10.`;
   finally { S.typing[cid] = false; render(); }
 }
 
-async function nextDay() {
+async function nextDay(opts = {}) {
   const W = S.W;
   if (guard()) return;
   snapshot();
-  setBusy(`Starting day ${W.day + 1}…`); render();
+  const step = opts.opening ? 0 : 1;   // the opening scene stays on day 1
+  setBusy(opts.opening ? "Setting the opening scene…" : opts.chapter ? "Starting a new chapter…" : `Starting day ${W.day + 1}…`); render();
   const locked = W.chars.filter(c => !c.unlocked && c.kind !== "news").map(c => c.name).join(", ");
   const prompt = `${ctx(W)}
 People who exist in this world but are not in the player's circle yet: ${locked || "-"}
 
-A NEW IN-WORLD DAY begins: day ${W.day + 1}. Advance the story: what are people posting today, what drama or opportunities show up around the player? Keep threads from the story memory going (consequences of the player's past actions) and add fresh hooks. The drama level sets how chaotic it gets.
+${opts.opening ? `THE STORY BEGINS (day 1). Set the opening scene for the story setup: what is everyone posting right now, who notices the player, and what are the first hooks? The drama level sets how chaotic it gets.`
+  : opts.chapter ? `NEW CHAPTER (day ${W.day + 1}): the player just changed the story setup (${opts.chapter}). Move the world there now (time-skip or change of scene as needed), show how people react to the new situation, and keep continuity with the story memory where it makes sense. The drama level sets how chaotic it gets.`
+  : `A NEW IN-WORLD DAY begins: day ${W.day + 1}${W.calendar ? ` (${dateLabel(W, W.day + 1)}). Any canon events dated between ${dateLabel(W)} and ${dateLabel(W, W.day + 1)} happen now unless the player's actions changed them` : ""}. Advance the story: what are people posting today, what drama or opportunities show up around the player? Keep threads from the story memory going (consequences of the player's past actions) and add fresh hooks. The drama level sets how chaotic it gets.`}
 ${IMG_RULE}
 Reply with ONLY this JSON:
 {"character_posts":[${POST_SHAPE}],
 "random_posts":[${POST_SHAPE}],
 "news_post":${POST_SHAPE} or null,
-"stories":[{"handle":"@listed character","text":"short story caption","image":"photo description or null"}],
+"stories":[{"handle":"@listed character","text":"short story caption","image":"photo description or null","image_tags":"2-3 word photo-search phrase or null"}],
 "events":[{"title":"short event title","desc":"2-3 sentences: the situation the player is in","choices":["choice 1","choice 2","choice 3"]}],
 "invite":{"handle":"@listed character","activity":"a short activity they invite the player to do together","text":"the DM invitation"} or null,
-"dm":{"handle":"@listed character","text":"a DM they send the player first"} or null,
+"dm":${DM_SHAPE} or null,
 "trends":["#trend1","#trend2","#trend3","#trend4"],
 "followers_change":0,
 "memory":"one sentence: the headline of this day"}
-Counts: character_posts 3-5 (listed characters only), random_posts 1-3, stories 1-3 (most stories have an image), events exactly 2. Use null where nothing fits.`;
+${CROWD_RULE}
+Counts: character_posts 2-4 (listed characters only), random_posts 3-5 (recurring or new random accounts), stories 1-3 (most stories have an image), events exactly 2. Use null where nothing fits.`;
   try {
     const r = await ai(prompt, "big");
-    W.day++;
+    W.day += step;
     addPosts(r.random_posts); addPosts(r.character_posts);
     if (r.news_post && !W.muteNews) addPosts([r.news_post], "news");
-    for (const s of (r.stories || []).slice(0, 4)) { const c = findCharByHandle(W, s.handle); if (c && (s.text || s.image)) W.stories.push({ id: uid("s"), a: c.id, t: String(s.text || ""), img: mkImg(s.image), bg: rnd(0, 5), day: W.day, ts: Date.now(), seen: false }); }
+    for (const s of (r.stories || []).slice(0, 4)) { const c = findCharByHandle(W, s.handle); if (c && (s.text || s.image)) W.stories.push({ id: uid("s"), a: c.id, t: String(s.text || ""), img: mkImg(s.image, s.image_tags), bg: rnd(0, 5), day: W.day, ts: Date.now(), seen: false }); }
     W.events = W.events.filter(e => !e.done && e.day >= W.day - 1).concat((r.events || []).slice(0, 2).filter(e => e && e.title).map(e => ({ id: uid("e"), title: String(e.title), desc: String(e.desc || ""), choices: (e.choices || []).slice(0, 3).map(String), day: W.day, done: false })));
     if (r.invite && r.invite.activity) { const c = findCharByHandle(W, r.invite.handle); if (c && c.unlocked && c.kind !== "news") { W.invites.push({ id: uid("i"), cid: c.id, act: String(r.invite.activity), day: W.day }); pushDM(c.id, "them", String(r.invite.text || r.invite.activity)); notify("dm", `${c.name} invited you: ${r.invite.activity}`, { dm: c.id }); } }
     proactiveDM(r.dm);
@@ -1110,7 +1317,7 @@ Counts: character_posts 3-5 (listed characters only), random_posts 1-3, stories 
     if ((r.events || []).length) notify("event", `Day ${W.day}: ${r.events.length} new events are waiting in Explore`);
     checkAch(); saveWorld();
     S.view.tab = "feed"; S.view.post = null;
-    toast(`Day ${W.day} has started`);
+    toast(opts.opening ? "The story begins" : opts.chapter ? "A new chapter begins" : `Day ${W.day} has started`);
   } catch (e) { S.snaps.pop(); failed(e); }
   finally { setBusy(null); render(); }
 }
@@ -1132,7 +1339,8 @@ Reply with ONLY this JSON:
 "relationship_changes":[{"handle":"@...","change":0,"reason":"short"}],
 "posts":[${POST_SHAPE}],
 "memory":"one sentence"}
-posts: 1-3 (listed characters or new random accounts).`;
+posts: 1-3 (listed characters, recurring or new random accounts).
+${CROWD_RULE}`;
   try {
     const r = await ai(prompt);
     const live = S.W.events.find(e => e.id === eid);
@@ -1150,6 +1358,7 @@ posts: 1-3 (listed characters or new random accounts).`;
 /* ----- activities: a short interactive scene with one character ----- */
 async function startActivity(cid, title, inviteId) {
   const W = S.W, c = W.chars.find(x => x.id === cid); if (!c || !title.trim() || guard()) return;
+  snapshot();
   if (inviteId) W.invites = W.invites.filter(i => i.id !== inviteId);
   W.act = { cid, title: title.trim(), lines: [], options: [], hist: [], turns: 0, done: false, busy: true };
   openActivity();
@@ -1166,7 +1375,7 @@ Reply with ONLY this JSON:
     if (r.narration) S.W.act.lines.push({ k: "narr", t: String(r.narration) });
     if (r.line) S.W.act.lines.push({ k: "char", t: String(r.line) });
     saveWorld();
-  } catch (e) { S.W.act = null; failed(e); closeLayer(); render(); return; }
+  } catch (e) { S.W.act = null; S.snaps.pop(); failed(e); closeLayer(); render(); return; }
   renderActivity();
 }
 async function actTurn(text) {
@@ -1215,18 +1424,17 @@ function actUndo() {
 function unlockChar(cid) {
   const W = S.W, me = W.me, c = W.chars.find(x => x.id === cid);
   if (!c || c.unlocked) return;
-  if (me.unlocks < 1) return toast("Clear a milestone first (upgrade skills to clear milestones)");
-  me.unlocks--; c.unlocked = true; c.followsMe = true; c.iFollow = true;
+  snapshot();
+  c.unlocked = true; c.followsMe = true; c.iFollow = true;
   notify("follow", `${c.name} followed you`);
   remember(`${c.name} joined ${me.name}'s circle`);
-  checkAch(); saveWorld(); render(); toast(`${c.name} followed you`);
+  checkAch(); saveWorld(); render(); if (S.sheet) refreshSheet(); toast(`${c.name} followed you`);
 }
 function addCustomToWorld(libId) {
   const W = S.W, me = W.me, L = S.G.library.find(x => x.id === libId); if (!L) return;
-  if (me.unlocks < 1) return toast("You need an unlock first");
   if (W.chars.some(c => c.lib === libId)) return toast("This character is already in this world");
-  me.unlocks--;
-  W.chars.push({ id: uid("c"), lib: libId, name: L.name, handle: L.handle, bio: L.bio, desc: L.desc, look: L.look || "", av: L.av, followers: rnd(500, 50000), unlocked: true, followsMe: true, iFollow: true, kind: "char", rel: 10, chem: "" });
+  snapshot();
+  W.chars.push({ id: uid("c"), lib: libId, name: L.name, handle: L.handle, bio: L.bio, desc: L.desc, look: L.look || "", av: Object.assign({ pic: derivePic(L.name, L.handle, L.bio), picAuto: true }, L.av), followers: rnd(500, 50000), unlocked: true, followsMe: true, iFollow: true, kind: "char", rel: 10, chem: "" });
   notify("follow", `${L.name} followed you`); remember(`${L.name} arrived in this world`);
   checkAch(); saveWorld(); closeLayer(); render();
 }
@@ -1250,7 +1458,7 @@ function setBusy(t) { S.busy = t; }
 function busyBar() { return S.busy ? `<div class="thinking gut" role="status"><span class="spin"></span>${esc(S.busy)}</div>` : ""; }
 function meterPill() { const m = meterInfo(); return `<button class="pill energy num" data-act="api" data-meter title="${esc(m.title)}" aria-label="API usage">${ic("zap")}<span>${esc(m.label)}</span></button>`; }
 function keyNotice() {
-  return S.G.apiKey ? "" : `<div class="gut"><div class="notice row" style="align-items:flex-start"><span style="font-size:20px">🔑</span><div class="grow"><b>Connect OpenRouter to play.</b> Paste a free API key and the app uses free models only. <button class="btn sm accent" style="margin-top:8px" data-act="api">Add API key</button></div></div></div>`;
+  return hasAI() ? "" : `<div class="gut"><div class="notice row" style="align-items:flex-start"><span style="font-size:20px">🔑</span><div class="grow"><b>Connect a free AI to play.</b> Paste a free key from OpenRouter, Groq or Gemini; add more than one and the app switches when one runs out. <button class="btn sm accent" style="margin-top:8px" data-act="api">Add API key</button></div></div></div>`;
 }
 
 /* ---------- home ---------- */
@@ -1315,7 +1523,7 @@ function renderWorld() {
     <button class="iconbtn" data-act="${v.post || v.dm ? "back" : "home"}" aria-label="Back">${ic("back")}</button>
     <div class="grow" style="line-height:1.2">
       <div style="font-family:var(--font-display);font-size:17px" class="ell">${esc(W.emoji)} ${esc(W.name)}</div>
-      <div class="tiny muted">Day ${W.day} · ${esc(MADNESS[W.madness])}</div>
+      <div class="tiny muted ell">Day ${W.day} · ${esc(W.calendar ? dateLabel(W) : W.sandbox ? eraLabel(W.sandbox) + " · " + W.sandbox.place : MADNESS[W.madness])}</div>
     </div>
     ${meterPill()}
     <button class="iconbtn" data-act="rewind" aria-label="Rewind" title="Rewind your last action" ${S.snaps.length ? "" : 'style="opacity:.35"'}>${ic("rewind")}</button>
@@ -1328,11 +1536,11 @@ function renderWorld() {
 
 function authorInfo(W, a) {
   if (a === "me") return { name: W.me.name, handle: W.me.handle, av: W.me.av, key: "me", verified: W.me.followers >= 10000, kind: "me" };
-  if (a && typeof a === "object") return { name: a.n, handle: a.h, av: { e: a.e, c: a.c, st: a.st }, key: a.h, verified: false, kind: "rand" };
+  if (a && typeof a === "object") { const n = W.npcs && W.npcs[String(a.h).toLowerCase()]; return { name: a.n, handle: a.h, av: { e: a.e, c: a.c, st: a.st, pic: a.pic || (n && n.pic) || derivePic(a.n, a.h) }, key: a.h, verified: false, kind: "rand" }; }
   const c = W.chars.find(x => x.id === a) || { name: "user", handle: "user", av: { e: "🙂" }, id: "x" };
   return { name: c.name, handle: c.handle, av: c.av, key: c.id, verified: c.kind === "news" || num(c.followers) >= 10000, kind: c.kind || "char", id: c.id };
 }
-const profA = A => A.kind === "rand" ? "" : A.kind === "me" ? "me" : A.id;
+const profA = A => A.kind === "rand" ? "rand:" + A.handle : A.kind === "me" ? "me" : A.id;
 const TAGS = { viral: ["viral", "🔥 Viral"], cancelled: ["cancel", "💀 Cancelled"], flop: ["news", "🥶 Flopped"], drama: ["drama", "🍿 Drama"], news: ["news", "📰 News"] };
 function postHTML(p) {
   const W = S.W, A = authorInfo(W, p.a), tg = p.tag && TAGS[p.tag];
@@ -1431,6 +1639,9 @@ function viewExplore() {
   if (!v.actChar || !circle.some(c => c.id === v.actChar)) v.actChar = circle[0]?.id || null;
   return `<main class="scroll">
     ${keyNotice()}${busyBar()}
+    ${W.sandbox ? `<section class="sec gut"><div class="card col" style="gap:6px;border-color:color-mix(in srgb,var(--violet) 45%,var(--line))">
+      <div class="row"><div class="grow"><div class="kicker" style="color:var(--violet)">📜 Story setup</div><b>${esc(eraLabel(W.sandbox))} · ${esc(W.sandbox.place)}</b></div><button class="btn sm soft" data-act="setup">Change</button></div>
+      <div class="small muted">You are ${esc(W.sandbox.role)}.${W.sandbox.situation ? " " + esc(W.sandbox.situation) : ""}</div></div></section>` : ""}
     <section class="sec gut">
       <div class="kicker">Day ${W.day}</div><h3 style="margin:2px 0 0">Move the story forward</h3>
       <div class="small muted">Start a new day: characters post, new events appear, and what you did comes back around.</div>
@@ -1476,7 +1687,7 @@ function viewDMs() {
   const list = W.chars.filter(c => c.unlocked && c.kind !== "news").map(c => { const m = W.dms[c.id] || []; return { c, last: m[m.length - 1] }; }).sort((a, b) => num(b.last?.ts) - num(a.last?.ts));
   return `<main class="scroll dmlist">
     ${keyNotice()}
-    <div class="gut" style="padding-block:14px 4px"><h3 style="font-size:20px">Messages</h3></div>
+    <div class="gut row" style="padding-block:14px 4px"><h3 class="grow" style="font-size:20px">Messages</h3><button class="btn sm soft" data-act="addChar">${ic("plus")} New</button></div>
     ${list.map(({ c, last }) => { const un = (W.dms[c.id] || []).some(m => m.f === "them" && m.ts > num(W.dmRead[c.id])); return `
       <div class="item gut" data-act="openDM" data-id="${esc(c.id)}" role="button" tabindex="0">
         ${avatar(c.av, c.id)}
@@ -1568,16 +1779,16 @@ function viewProfile() {
     </section>
     <section class="sec gut">
       <div class="row"><h3 class="grow" style="margin:0">Milestones</h3><span class="small muted num">${doneM}/${me.milestones.length}</span></div>
-      <div class="small muted" style="margin:4px 0 8px">Every 2 skill upgrades clears a milestone, and each milestone lets you unlock one character.</div>
+      <div class="small muted" style="margin:4px 0 8px">Every 2 skill upgrades clears a milestone (+5 gems).</div>
       <ol class="list-plain">${me.milestones.map((m, j) => `<li class="row small" style="${m.done ? "" : "color:var(--muted)"}"><span style="width:22px">${m.done ? "✅" : "⬜"}</span><span class="grow">${esc(m.t)}</span><span class="tiny muted num">${m.done ? "" : (j + 1) * 2 + " upgrades"}</span></li>`).join("")}</ol>
     </section>
     <section class="sec gut">
-      <div class="row"><h3 class="grow" style="margin:0">Characters</h3>${me.unlocks ? `<span class="pill hot">${me.unlocks} unlock${me.unlocks === 1 ? "" : "s"} ready</span>` : ""}</div>
+      <div class="row"><h3 class="grow" style="margin:0">Characters</h3><button class="btn sm accent" data-act="addChar">${ic("plus")} Add</button></div>
       <div class="col" style="margin-top:10px">
         ${circle.map(c => `<div class="row" data-act="profileOf" data-a="${esc(c.id)}" style="cursor:pointer">${avatar(c.av, c.id, "sm")}<div class="grow"><div class="row" style="gap:5px"><b class="ell">${esc(c.name)}</b><span class="tiny muted ell">${esc(c.chem || "")}</span></div>${relBar(c.rel)}</div><span class="small num" style="color:${relColor(c.rel)};width:34px;text-align:right">${Math.round(c.rel)}</span></div>`).join("")}
         ${locked.map(c => `<div class="row" style="opacity:.8">${avatar(c.av, c.id, "sm")}<div class="grow"><b class="ell">${esc(c.name)}</b><div class="tiny muted ell">${esc(c.bio || "")}</div></div>
-          ${me.unlocks ? `<button class="btn sm accent" data-act="unlock" data-id="${esc(c.id)}">Unlock</button>` : `<span class="muted" style="width:20px">${ic("lock")}</span>`}</div>`).join("")}
-        <button class="btn ghost sm" data-act="addCustom" style="align-self:flex-start">${ic("plus")} Add one of my characters</button>
+          <button class="btn sm soft" data-act="unlock" data-id="${esc(c.id)}">Add</button></div>`).join("")}
+        <button class="btn ghost sm" data-act="addChar" style="align-self:flex-start">${ic("plus")} Add any character</button>
       </div>
     </section>
     <section class="sec gut">
@@ -1633,14 +1844,44 @@ function closeLayer() { S.sheet = null; layer.innerHTML = ""; }
 const head = (title, extra = "") => `<div class="sh-head gut"><button class="iconbtn" data-act="close" aria-label="Close">${ic("x")}</button><h2 class="ell">${title}</h2>${extra}</div>`;
 const chips = (list, cur, act) => `<div class="row wrap" style="gap:8px">${list.map(([k, l]) => `<button class="chip" data-act="${act}" data-id="${esc(k)}" aria-pressed="${cur === k}">${esc(l)}</button>`).join("")}</div>`;
 
-/* ---------- API & usage (OpenRouter) ---------- */
-function openApi(msg) { S.apiMsg = msg || ""; openSheet(sheetApi); if (!S.models) loadModels().then(() => refreshSheet()); refreshKey(); }
+/* ---------- AI providers: OpenRouter, Groq, Gemini ---------- */
+function openApi(msg) {
+  S.apiMsg = msg || ""; openSheet(sheetApi);
+  if (!S.models) loadModels().then(() => refreshSheet());
+  for (const p of ["groq", "gemini"]) if (S.G[PROV[p].keyF] && !(S.pmodels && S.pmodels[p])) loadProvModels(p).then(() => refreshSheet());
+  refreshKey();
+}
+function provStatus(p) {
+  const G = S.G, n = G.req.day === todayKey() && G.req.by ? G.req.by[p] || 0 : 0;
+  if (!G[PROV[p].keyF]) return `<span class="muted">Not added</span>`;
+  if (BADKEY[p]) return `<span style="color:var(--bad)">Key rejected · check it</span>`;
+  if (cooling(p)) { const u = new Date(COOL[p].until); return `<span style="color:var(--gold)">Out of free requests · back ${COOL[p].daily ? "at " + u.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "in a minute"}</span>`; }
+  return `<span style="color:var(--good)">Ready</span><span class="muted"> · ${n} request${n === 1 ? "" : "s"} today</span>`;
+}
+function provCard(p) {
+  const P = PROV[p], G = S.G, key = G[P.keyF], list = (S.pmodels && S.pmodels[p]) || null, m = provModel(p);
+  const info = { groq: "Free, very fast. Roughly 1,000 requests a day on big models, more on small ones (limits are per model).", gemini: "Google's free tier. Daily limits change; your exact numbers are in Google AI Studio." }[p];
+  return `<div class="card col" style="gap:10px">
+    <div><b>${P.name}</b><div class="small">${provStatus(p)}</div></div>
+    <div class="tiny muted">${info}</div>
+    <div class="row"><label class="sr" for="${p}KeyIn">${P.name} API key</label><input class="in" id="${p}KeyIn" type="password" autocomplete="off" placeholder="${P.hint}" value="${esc(key)}"><button class="btn sm accent" data-act="provKeySave" data-p="${p}">Save</button></div>
+    <div class="tiny muted">Get a free key at <a href="${P.keyUrl}" target="_blank" rel="noopener">${P.keyUrl.replace("https://", "")}</a>. It stays in this browser and is sent only to ${P.name}.</div>
+    ${key ? `<div class="field"><label for="${p}ModelSel">Model</label>
+      ${list && list.length ? `<select class="in" id="${p}ModelSel" data-act-change="provModel" data-p="${p}">${list.includes(m) ? "" : `<option value="${esc(m)}" selected>${esc(m)}</option>`}${list.map(x => `<option value="${esc(x)}" ${x === m ? "selected" : ""}>${esc(x)}</option>`).join("")}</select>`
+        : list ? `<div class="small" style="color:var(--bad)">Couldn't load ${P.name}'s models. Check the key.</div>` : `<div class="thinking"><span class="spin"></span>Loading models…</div>`}</div>
+      <button class="btn sm ghost" style="align-self:flex-start;color:var(--bad)" data-act="provKeyRemove" data-p="${p}">Remove key</button>` : ""}
+  </div>`;
+}
 function sheetApi() {
   const G = S.G, k = S.key, fr = k && k.free_model_daily_requests;
   const models = S.models || [];
   const inList = models.some(m => m.id === G.model);
-  return head("API & usage") + `<div class="sh-body"><div class="col gut" style="gap:14px">
+  const order = aiOrder();
+  return head("AI providers") + `<div class="sh-body"><div class="col gut" style="gap:14px">
     ${S.apiMsg ? `<div class="notice">${esc(S.apiMsg)}</div>` : ""}
+    <div class="small muted">Add one or more free AI keys. The app uses the first one, and when it runs out of free requests it switches to the next automatically, so your daily limits add up.</div>
+    <div class="field"><label>Use first</label>${chips(PROV_IDS.map(x => [x, PROV[x].name]), order[0], "provFirst")}<div class="tiny muted">Order: ${order.map(x => PROV[x].name + (S.G[PROV[x].keyF] ? "" : " (no key)")).join(" → ")}</div></div>
+    <div class="card col" style="gap:10px"><div><b>OpenRouter</b><div class="small">${provStatus("openrouter")}</div></div>
     <div class="field"><label for="keyIn">OpenRouter API key</label>
       <div class="row"><input class="in" id="keyIn" type="password" autocomplete="off" placeholder="sk-or-v1-…" value="${esc(G.apiKey)}"><button class="btn sm accent" data-act="keySave">Save</button></div>
       <div class="tiny muted">Make a free key at <a href="https://openrouter.ai/keys" target="_blank" rel="noopener">openrouter.ai/keys</a>. It stays in this browser only and is sent only to OpenRouter.</div></div>
@@ -1655,7 +1896,6 @@ function sheetApi() {
           <div class="statbox"><div class="tiny muted">Credits used today</div><div class="v num">$${Number(k.usage_daily || 0).toFixed(4)}</div></div>
           <div class="statbox"><div class="tiny muted">Credits left on key</div><div class="v num">${k.limit_remaining == null ? "No limit" : "$" + Number(k.limit_remaining).toFixed(2)}</div></div>
         </div>`}
-      <div class="tiny muted num">Requests sent from this app today: ${G.req.day === todayKey() ? G.req.n : 0}</div>
     </div>` : ""}
     <div class="field"><label for="modelSel">AI model</label>
       ${S.models == null ? `<div class="thinking"><span class="spin"></span>Loading free models…</div>` : models.length ? `
@@ -1664,6 +1904,10 @@ function sheetApi() {
       <div class="tiny muted">Only models ending in <code class="k">:free</code> are free. Bigger models write better stories and follow the game format more reliably. If one model is busy, switch to another.</div>
       <button class="btn sm ghost" style="align-self:flex-start" data-act="modelsReload">Reload model list</button></div>
     ${G.apiKey ? `<button class="btn sm ghost" style="align-self:flex-start;color:var(--bad)" data-act="keyRemove">Remove key from this browser</button>` : ""}
+    </div>
+    ${provCard("groq")}
+    ${provCard("gemini")}
+    <div class="tiny muted num">Requests sent from this app today: ${G.req.day === todayKey() ? G.req.n : 0}${G.req.day === todayKey() && G.req.by ? " (" + PROV_IDS.filter(x => G.req.by[x]).map(x => PROV[x].name + " " + G.req.by[x]).join(", ") + ")" : ""}</div>
   </div></div>`;
 }
 
@@ -1677,16 +1921,312 @@ const PRESETS = [
   ["🏰", "Court of Elvar", "Fantasy royals: princes, knights, a palace witch and a secret plot for the throne everyone posts about"],
   ["🚀", "Orion Station", "A crew in deep space, a ship AI acting strange, and a mysterious signal from the next planet"]
 ];
+/* ================= ready-made world: Hogwarts 1995–96 (book canon) =================
+   Built locally, no AI call. The lore block rides along in every prompt so the AI keeps to canon
+   and to the school-year timeline; each in-world day moves the calendar on 3 days (Sep → Jun ≈ 95 days). */
+const HP_PRESET = -2;
+const HOUSES = {
+  Gryffindor: { em: "🦁", pic: "lion", circle: ["hp_ron", "hp_hermione", "hp_neville"], rival: "Slytherin",
+    skills: [["Nerve", "Bold moves land more often, but so do the consequences"], ["Quidditch", "Flying, tryouts and match-day glory"], ["Defensive spells", "Shield, Stun, Disarm when it matters"]] },
+  Hufflepuff: { em: "🦡", pic: "badger", circle: ["hp_hannah", "hp_ernie", "hp_luna"], rival: null,
+    skills: [["Loyalty", "Friends back you up when it counts"], ["Herbology", "Plants, potions ingredients, Professor Sprout's favour"], ["Hard work", "Revision and practice actually pay off"]] },
+  Ravenclaw: { em: "🦅", pic: "eagle", circle: ["hp_luna", "hp_padma", "hp_cho"], rival: null,
+    skills: [["Wit & learning", "Clever answers, top marks, sharp comebacks"], ["Charms", "Precise, creative spellwork"], ["Spotting secrets", "You notice what others miss"]] },
+  Slytherin: { em: "🐍", pic: "grass snake", circle: ["hp_draco", "hp_pansy", "hp_blaise"], rival: "Gryffindor",
+    skills: [["Ambition & cunning", "Schemes and power plays succeed more"], ["Connections", "Families, favours and Ministry gossip"], ["Potions", "Snape's subject, and subtle tricks"]] }
+};
+const HP_LORE = `Book canon Harry Potter, school year 1995-96 at Hogwarts (Order of the Phoenix era). Keep strictly to canon: real spells, potions, classes, places, rules, history and each character's canon personality and knowledge. Use British English and wizarding expressions; only bigoted characters use slurs like "Mudblood".
+No phones or internet: "the feed" is enchanted parchment that magically shares posts across the castle; DMs travel as charmed notes. Money is Galleons, Sickles and Knuts.
+Years: Harry, Ron, Hermione, Neville, Draco, Pansy, Blaise, Hannah, Ernie, Padma and the player are 5th years (O.W.L. year); Ginny and Luna are 4th years; Cho is 6th; Fred, George and Angelina are 7th.
+Situation at the start: Voldemort returned in June and murdered Cedric Diggory. The Ministry under Cornelius Fudge denies it; the Daily Prophet paints Harry as an unstable liar and Dumbledore as senile, and Dumbledore lost his Wizengamot and ICW posts. Dementors attacked Harry in Little Whinging over the summer; he was cleared at a full Wizengamot hearing. The Order of the Phoenix works in secret from 12 Grimmauld Place, where Sirius Black hides (the public thinks he is a mass murderer). Percy Weasley sided with the Ministry and cut off his family. Hagrid is away on a secret mission to the giants until November. Rita Skeeter cannot write: Hermione knows she is an unregistered Animagus (a beetle).
+Canon timeline. It happens on schedule unless the player's actions change it. Never reveal or hint at events before their date, and characters only know what they would know at that moment:
+- September: Umbridge's theory-only Defence lessons; Harry's Blood Quill detentions; Ron becomes Gryffindor Keeper.
+- Early October: Educational Decree 23 makes Umbridge High Inquisitor, inspecting teachers. A Hogsmeade meeting at the Hog's Head starts a secret defence group; Decree 24 bans student groups; it becomes Dumbledore's Army, meeting in the Room of Requirement and using charmed fake Galleons.
+- November: Gryffindor beats Slytherin while Slytherins sing "Weasley Is Our King"; after a fight Umbridge bans Harry, Fred and George from Quidditch for life. Hagrid returns, bruised, and is put on probation.
+- December: Harry and Cho kiss after a DA meeting; Arthur Weasley is attacked by Nagini at the Ministry (Harry sees it in a vision); Christmas at Grimmauld Place and St Mungo's.
+- January: mass breakout from Azkaban (ten Death Eaters including Bellatrix Lestrange); Harry starts Occlumency lessons with Snape.
+- February: Harry and Cho's disastrous Valentine's date at Madam Puddifoot's; Harry's interview with Rita Skeeter runs in The Quibbler; Umbridge bans it, so everyone reads it.
+- March: Trelawney is sacked and Firenze teaches Divination; Marietta Edgecombe betrays the DA; Dumbledore takes the blame and escapes; Umbridge becomes Headmistress (Decree 28) with an Inquisitorial Squad.
+- Spring: careers advice; Fred and George leave in style with a swamp and fireworks; McGonagall is hurt defending Hagrid.
+- June: O.W.L. exams; the battle at the Department of Mysteries; the Ministry finally admits Voldemort is back.`;
+/* [id, name, handle, house/role, bio, desc, look, emoji, colour, avatar style, followers, kind] */
+/* profile pictures for the cast: objects and scenes that say who they are, never faces */
+const HP_PICS = {
+  hp_harry: "golden snitch", hp_hermione: "old books candle", hp_ron: "chess set", hp_ginny: "red fox", hp_twins: "fireworks", hp_neville: "cactus",
+  hp_luna: "full moon", hp_cho: "raven", hp_padma: "starry night", hp_hannah: "honey jar", hp_ernie: "tartan", hp_angelina: "broomstick",
+  hp_draco: "cobra", hp_pansy: "emerald", hp_blaise: "black panther", hp_umbridge: "pink teacup", hp_mcgonagall: "tabby cat", hp_snape: "cauldron",
+  hp_dumbledore: "phoenix feather", hp_hagrid: "lantern", hp_sirius: "newfoundland dog", hp_prophet: "old newspaper", hp_quibbler: "vintage magazine"
+};
+const HP_CAST = [
+  ["hp_harry", "Harry Potter", "h.potter", "Gryffindor", "gryffindor · seeker · yes, i'm telling the truth", "Fifth-year Gryffindor. Saw Voldemort return and Cedric die in June; now the Ministry and the Prophet call him an attention-seeking liar. Angry and on edge this year, plagued by nightmares and a burning scar, furious that Dumbledore keeps him in the dark. Posts rarely and bluntly, never self-pitying. Brave, loyal, sarcastic with people he doesn't trust.", "untidy jet-black hair, round glasses, green eyes, lightning-bolt scar, Gryffindor scarf", "⚡", 1, "adventurer", 48000],
+  ["hp_hermione", "Hermione Granger", "hermione.granger", "Gryffindor", "prefect · S.P.E.W. founder · have you read Hogwarts: A History?", "Gryffindor prefect and the cleverest witch in the year. Writes in full sentences, cites books, reminds everyone that O.W.L.s are THIS year. Campaigns for house-elf rights (S.P.E.W.) and knits hats to free elves. Fiercely loyal to Harry and Ron, bickers with Ron constantly. Holds Rita Skeeter's Animagus secret over her.", "bushy brown hair, prefect badge, arms full of books", "📚", 2, "lorelei", 6200],
+  ["hp_ron", "Ron Weasley", "ronweasley", "Gryffindor", "prefect (somehow) · chudley cannons till i die", "Gryffindor prefect, still stunned he got the badge. Funny, a bit insecure, scared of spiders, obsessed with the Chudley Cannons and food. Types fast in lowercase, says 'bloody hell' a lot. Nervous about trying out as Gryffindor Keeper. Embarrassed by his twin brothers and furious at Percy for siding with the Ministry.", "tall and gangly, flaming red hair, freckles, hand-me-down robes", "🧡", 5, "micah", 4100],
+  ["hp_ginny", "Ginny Weasley", "ginny.w", "Gryffindor", "4th year · don't make me use the bat-bogey hex", "Fourth-year Gryffindor, the youngest Weasley and only daughter. Confident, quick, funny, famous for her Bat-Bogey Hex. Over her old crush on Harry and going out with Michael Corner from Ravenclaw. Defends Harry against the Prophet and teases her brothers without mercy.", "long straight red hair, freckles, Gryffindor jumper, broomstick over one shoulder", "🔥", 0, "lorelei", 3500],
+  ["hp_twins", "Fred & George Weasley", "weasleytwins", "Gryffindor", "7th years · products available by owl · discreet service", "Fred and George share one account and sign posts '—F' or '—G'. Seventh-year Gryffindor Beaters and the school's best pranksters, secretly funded by Harry's Triwizard winnings to start a joke shop. Selling Skiving Snackboxes (Puking Pastilles, Nosebleed Nougat, Fainting Fancies) and testing them on first-years. Loathe Umbridge, love chaos, protect their family.", "identical red-headed twins, matching grins, dragon-hide jackets", "🎆", 5, "big-smile", 12000],
+  ["hp_neville", "Neville Longbottom", "neville.l", "Gryffindor", "herbology · proud owner of a mimbulus mimbletonia", "Fifth-year Gryffindor. Shy, clumsy and gentle, brilliant at Herbology, raised by his formidable grandmother. His parents were tortured into madness by Death Eaters, a secret he keeps very close. Believes Harry. Grows braver as the year goes on.", "round face, nervous smile, holding a small cactus-like plant", "🌱", 8, "notionists", 900],
+  ["hp_luna", "Luna Lovegood", "luna.lovegood", "Ravenclaw", "ravenclaw · the quibbler's #1 reader · mind the nargles", "Fourth-year Ravenclaw some call 'Loony'. Dreamy, serene and startlingly honest; believes in Nargles, Wrackspurts and Crumple-Horned Snorkacks. Her father edits The Quibbler. She can see Thestrals because she saw her mother die. Believes Harry completely. Her posts read like calm, odd little poems.", "long straggly dirty-blonde hair, radish earrings, butterbeer-cork necklace, magazine held upside down", "🌙", 6, "lorelei", 600],
+  ["hp_cho", "Cho Chang", "cho.chang", "Ravenclaw", "ravenclaw seeker · missing someone", "Sixth-year Ravenclaw Seeker, pretty and popular. Grieving Cedric Diggory, her boyfriend who died in June, and cries easily. Wants to know what really happened to him, which draws her to Harry. Torn between loyalty to friends like Marietta Edgecombe and doing what's right.", "long glossy black hair, Ravenclaw Quidditch robes, sad smile", "🪽", 1, "lorelei", 9000],
+  ["hp_padma", "Padma Patil", "padma.patil", "Ravenclaw", "ravenclaw prefect · yes, parvati's twin", "Fifth-year Ravenclaw prefect and twin sister of Gryffindor Parvati. Clever, composed and a little judgemental; still remembers going to the Yule Ball with a sulking Ron. Cares about marks and reputation.", "long dark plaited hair, prefect badge, Ravenclaw blue", "🔷", 1, "personas", 2000],
+  ["hp_hannah", "Hannah Abbott", "hannah.abbott", "Hufflepuff", "hufflepuff prefect · herbology · stressed about o.w.l.s", "Fifth-year Hufflepuff prefect. Warm, anxious and easily flustered; panics about O.W.L.s. Fair-minded, comes round to believing Harry. Friendly with Neville over Herbology.", "blonde pigtails, pink cheeks, prefect badge, yellow-and-black scarf", "🌼", 2, "open-peeps", 1200],
+  ["hp_ernie", "Ernie Macmillan", "ernie.macmillan", "Hufflepuff", "hufflepuff prefect · pompous? I prefer 'principled'", "Fifth-year Hufflepuff prefect. Pompous, long-winded, formal, takes his prefect duties very seriously. Proud of Hufflepuff and loyal to Cedric's memory. Publicly declares he believes Harry.", "neat hair, very polished prefect badge, upright posture", "🦡", 7, "personas", 1500],
+  ["hp_angelina", "Angelina Johnson", "angelina.j", "Gryffindor", "gryffindor captain · practice is NOT optional", "Seventh-year Gryffindor Chaser and the new Quidditch Captain. Tough, driven and terrifying about practice. Needs a new Keeper now Oliver Wood has left, and keeps losing her Seeker to Umbridge's detentions. Went to the Yule Ball with Fred.", "long braids, Gryffindor Quidditch robes, captain's whistle", "🏆", 0, "micah", 4000],
+  ["hp_draco", "Draco Malfoy", "d.malfoy", "Slytherin", "slytherin prefect · pure-blood · malfoy", "Fifth-year Slytherin prefect: smug, sneering and spoiled. His father Lucius is a Death Eater with friends at the Ministry, and Draco gloats about Ministry gossip, calling Harry 'Potty' and 'Scarhead'. Posts insults dressed up as jokes. Eager to win Umbridge's favour. Underneath, anxious about living up to his family.", "slicked-back white-blond hair, pale pointed face, silver-and-green prefect badge", "🐍", 4, "micah", 15000],
+  ["hp_pansy", "Pansy Parkinson", "pansy.parkinson", "Slytherin", "slytherin prefect · draco's plus-one", "Fifth-year Slytherin prefect, Draco's sidekick and admirer. Shrill, catty and gossipy, loves cruel nicknames and laughs at everything Draco says. Collects drama about Gryffindors and 'blood traitors'.", "sharp features, glossy dark bob, smirk, silver-and-green scarf", "💚", 3, "lorelei", 3000],
+  ["hp_blaise", "Blaise Zabini", "blaise.z", "Slytherin", "unbothered", "Fifth-year Slytherin. Cool, aloof, handsome and snobbish; his glamorous, much-married mother is rumoured to have outlived seven husbands. Looks down on almost everyone, including Draco's antics. Posts are rare, dry and cutting.", "tall, high cheekbones, close-cropped hair, bored expression", "🖤", 3, "personas", 2500],
+  ["hp_umbridge", "Dolores Umbridge", "prof.umbridge", "Staff", "defence against the dark arts · senior undersecretary to the minister", "Ministry official made Defence Against the Dark Arts professor by Educational Decree Twenty-Two. Sugary voice, pink cardigans, kitten plates, interrupts with 'hem, hem'. Teaches theory only, no wand practice. Insists Voldemort has not returned and punishes 'lies' with a Blood Quill in detention. Posts in prim, cheerful, menacing Ministry language and new rules.", "short and squat, toad-like face, fluffy pink cardigan, black velvet bow", "🎀", 9, "personas", 30000],
+  ["hp_mcgonagall", "Minerva McGonagall", "prof.mcgonagall", "Staff", "transfiguration · head of gryffindor · deputy headmistress", "Head of Gryffindor and Transfiguration professor. Strict, dry and fiercely fair; despises Umbridge and resists her with icy politeness. Her rare posts are crisp and formal. Deeply protective of her students and secretly very invested in Gryffindor Quidditch.", "tight black bun, square spectacles, emerald robes, tartan", "🐈", 3, "personas", 25000],
+  ["hp_snape", "Severus Snape", "s.snape", "Staff", "potions · head of slytherin", "Potions master and Head of Slytherin. Cold, sarcastic and cutting, openly favours Slytherin and loathes Harry. Secretly a member of the Order of the Phoenix; his true loyalties are unclear to students. Almost never posts; replies are short, withering and cost house points.", "sallow skin, hooked nose, greasy shoulder-length black hair, billowing black robes", "🧪", 7, "notionists", 8000],
+  ["hp_dumbledore", "Albus Dumbledore", "a.dumbledore", "Staff", "headmaster · fond of sherbet lemons", "Headmaster of Hogwarts, stripped of his Wizengamot and ICW posts for saying Voldemort is back. Calm, whimsical and kind, but this year he avoids Harry's eyes for reasons he keeps to himself. Secretly leads the Order of the Phoenix. Rarely posts; when he does it is gentle and cryptic.", "long silver beard, half-moon spectacles, starry purple robes", "✨", 4, "notionists", 120000],
+  ["hp_hagrid", "Rubeus Hagrid", "hagrid", "Staff", "keeper of keys & grounds · care of magical creatures", "Keeper of Keys and Grounds and Care of Magical Creatures teacher. Half-giant with a huge heart, hopeless at keeping secrets. Away at the start of term on Dumbledore's secret mission to the giants; posts nothing until he returns in November, bruised, and is put on probation by Umbridge. Writes the way he talks.", "enormous, wild black hair and beard, moleskin overcoat, kind beetle-black eyes", "🐉", 7, "open-peeps", 7000],
+  ["hp_sirius", "Snuffles", "snuffles", "Order", "just a dog. definitely just a dog.", "Secretly Sirius Black, Harry's godfather, an escaped convict the public thinks is a mass murderer. Hiding at 12 Grimmauld Place and bitter at being cooped up. Posts only as 'Snuffles' (his dog form) in careful coded messages, and may slip into Harry's or the player's DMs. Reckless, warm, treats Harry a bit like his late friend James.", "", "🐕", 7, "adventurer", 40],
+  ["hp_prophet", "The Daily Prophet", "dailyprophet", "News", "Britain's premier wizarding newspaper", "Ministry-friendly newspaper. Smears Harry Potter as an unstable attention-seeker and Dumbledore as a senile troublemaker, prints Ministry statements and Educational Decrees, and denies Voldemort's return until the Ministry admits it.", "", "📰", 7, "initials", 450000, "news"],
+  ["hp_quibbler", "The Quibbler", "thequibbler", "News", "the other side of the story · ed. X. Lovegood", "Eccentric magazine edited by Xenophilius Lovegood: Crumple-Horned Snorkacks, wild conspiracy theories, readers' letters. Sympathetic to Harry and Dumbledore, mostly laughed at.", "", "🌀", 6, "initials", 8000, "news"]
+];
+function buildHogwarts(c) {
+  const house = c.house === "Sorting Hat" || !HOUSES[c.house] ? pick(Object.keys(HOUSES)) : c.house, H = HOUSES[house], t = Date.now(), day = 1;
+  const chars = HP_CAST.map(([id, name, handle, role, bio, desc, look, e, col, st, followers, kind]) => {
+    const inCircle = H.circle.includes(id);
+    const rel = inCircle ? 15 : role === house ? 5 : H.rival && role === H.rival ? -10 : 0;
+    return { id, name, handle, bio, desc, look, av: { e, c: col, st, sd: handle, pic: HP_PICS[id] }, followers, kind: kind || "char", unlocked: inCircle, followsMe: inCircle, iFollow: inCircle, rel, chem: inCircle ? (role === house ? "Housemates" : "Friends") : "" };
+  });
+  const P = (a, text, img, likes, rts, views, extra = {}) => Object.assign({ id: uid("p"), a, t: text, img: img ? { d: img, s: hashN(img) % 999999 } : null, day, ts: t, likes, rts, views, replies: [] }, extra);
+  const R = (a, text, likes) => ({ id: uid("r"), a, t: text, likes, ts: t });
+  const npcs = {};   // the castle crowd: random students with one clear identity each
+  const rand = (h, n, e, col, st, bio, pic) => { npcs[h.toLowerCase()] = { h, n, e, c: col, st, bio, pic, picAuto: false, first: 1, seen: t }; return { h, n, e, c: col, st, pic }; };
+  const W = {
+    id: uid("w"), name: "Hogwarts 1995", emoji: "⚡", fandom: "Harry Potter (book canon) · Order of the Phoenix year", imgStyle: c.imgStyle || "art",
+    desc: `Hogwarts School of Witchcraft and Wizardry, autumn 1995. Voldemort is back, the Ministry insists he isn't, and a pink-cardiganed Ministry witch has just been given the Defence Against the Dark Arts job. You are a fifth-year ${house} facing O.W.L.s in the strangest year the castle has known.`,
+    lore: HP_LORE + `\nThe player (not a canon character) is a fifth-year ${house}. Canon characters know them a little as a classmate and react according to house loyalties.`,
+    calendar: "1995-09-01", dayStep: 3, madness: c.madness || 3, muteNews: false, day, createdAt: t, savedAt: 0,
+    me: { name: c.name.trim(), handle: c.handle, bio: c.bio.trim() || `5th year · ${house} ${H.em}`, look: c.look.trim(), vibe: c.vibe, av: Object.assign({}, c.av, { pic: String(c.pic || "").trim() || H.pic }), house,
+      followers: rnd(80, 260), humor: 10, aura: 10, xp: 0, level: 1, sp: 1, unlocks: 1,
+      skills: H.skills.map(([name, desc]) => ({ name, desc, lv: 1 })),
+      goal: "Survive the Umbridge year: pass your O.W.L.s, choose a side, and find out the truth about what happened in June",
+      milestones: ["Survive the first week under Umbridge", `Make a name for yourself in ${house}`, "Make the house Quidditch team, or be the reason someone doesn't", "Choose a side: the secret defence group or Umbridge's favour", "Get through a detention without breaking", "Survive the Valentine's Hogsmeade chaos", "Be at the centre of a castle-wide scandal", "Sit your O.W.L.s", "Be there the night the truth comes out"].map(x => ({ t: x, done: false })),
+      boosts: { viral: 1, clout: 1 } },
+    chars, npcs, posts: [], dms: {}, dmRead: {}, dmMeta: {}, stories: [], notifs: [], log: [], events: [], invites: [],
+    trends: ["#HemHem", "#SortingHatsWarning", "#NewPrefects", "#OWLyear", "#BelieveHarry"], act: null
+  };
+  W.posts = [
+    P("hp_prophet", "MINISTRY STEPS IN AT HOGWARTS: after the Headmaster again failed to find a Defence Against the Dark Arts teacher, Educational Decree No. 22 lets the Minister appoint one. Senior Undersecretary Dolores Umbridge takes up the post. 'Standards have been slipping,' a Ministry source says. Page 1.", "newspaper front page with a moving photograph of a smiling witch in pink in front of a castle", 2400, 610, 98000, { tag: "news", replies: [R(rand("seamus.finnigan", "Seamus Finnigan", "🍀", 0, "adventurer", "gryffindor 5th yr · things explode sometimes", "burning match"), "me mam nearly didn't let me come back this year. says it's not safe with certain people around", 140), R("hp_ginny", "the Prophet couldn't find the truth with a Point Me spell", 210)] }),
+    P("hp_umbridge", "Hem, hem. Such a pleasure to be back at Hogwarts! I look forward to us all becoming very good friends, and to the Ministry's guidance helping every student reach the proper standard. Some traditions will be kept. Others, perhaps, gently... pruned. 💗", "teacup on a lace doily, pink saucer painted with a small kitten", 860, 40, 21000, { replies: [R("hp_twins", "Lovely. Truly. Our stomachs feel a bit funny all of a sudden, entirely coincidentally. —G", 520), R("hp_draco", "Welcome, Professor. Some of us have been waiting for real standards.", 300)] }),
+    P("hp_ron", "got a prefect badge. me. mum cried, fred and george haven't stopped laughing for three days. got a new broom out of it though so", "shiny new racing broomstick leaning against a four-poster bed with red and gold curtains", 410, 22, 3900, { replies: [R("hp_twins", "ickle Ronniekins, a PREFECT. we're so proud we could vomit. (we have products for that) —F", 380), R("hp_hermione", "Congratulations! (Please don't use it to skip the queue for pudding.)", 95)] }),
+    P("hp_luna", "The carriages have horses this year. Well, they always did. Some of us can just see them now.", "skeletal black winged horses pulling old carriages along a misty path at dusk, castle lights behind", 120, 30, 2100, { replies: [R(rand("tower.whispers", "tower whispers", "🦅", 1, "micah", "ravenclaw gossip, alphabetised", "old letters"), "loony's off again 🙄", 12), R("hp_neville", "I... actually saw something too. I thought I was going mad.", 44)] }),
+    P("hp_draco", "Prefect. Obviously. Father says the Ministry is finally taking a firm hand with a certain old fool and his favourite liar. About time.", null, 1300, 90, 15000, { replies: [R("hp_pansy", "😂😂 the old fool won't last till Christmas", 230), R("hp_ernie", "That is a disgraceful way to speak of the Headmaster, Malfoy.", 60)] }),
+    P("hp_hermione", "Reminder that O.W.L.s are THIS year. Colour-coded revision timetables are available on request. Also, S.P.E.W. membership is two Sickles, badge included. House-elves deserve wages.", "neat colour-coded revision timetable pinned beside knitted woolly hats on a common room table", 210, 18, 2600, { replies: [R("hp_ron", "it is the FIRST DAY", 180)] }),
+    P(rand("magical_plant_freak", "Greenhouse Three ✿", "🌱", 8, "open-peeps", "herbology or nothing · my mandrakes are my children", "bonsai tree"), "the mandrakes in greenhouse three are teething again. honestly relatable. who's helping me repot on saturday 🌱", "row of potted mandrake seedlings with leafy tufts on a misty greenhouse bench", 64, 5, 900),
+    P(rand("dungeon_kitten", "dungeon kitten", "🐈‍⬛", 3, "lorelei", "slytherin 3rd year · cats > people", "black kitten"), "our common room windows look out under the lake and the giant squid just waved at me. best house, no notes.", "greenish underwater light through a dungeon window, a huge tentacle drifting past", 210, 14, 2600),
+    P(rand("quaffle.queen", "quaffle queen", "🏆", 0, "micah", "quidditch or nothing · keeper try-outs countdown", "stadium floodlights"), "gryffindor keeper try-outs this month and half the house is suddenly 'a natural flyer'. respectfully, no.", null, 120, 9, 2100),
+    P("hp_quibbler", "New evidence: could the so-called mass murderer Sirius Black really be Stubby Boardman, lead singer of the Hobgoblins? One reader insists he was with her on the night in question. Full story p.4 (read upside down for the hidden runes).", null, 90, 25, 3000, { tag: "news" }),
+    P("hp_twins", "Back for our final year. Product testers wanted, first-years preferred, no questions answered. Payment in sweets that may or may not make you vomit. —F & G", null, 2200, 400, 16000)
+  ];
+  const firstDM = {
+    Gryffindor: ["hp_ron", ["you see the carriages?? harry says there's horses. there are NOT horses", "also hermione's already made a revision timetable. it is the first DAY"]],
+    Hufflepuff: ["hp_hannah", ["Did you hear the Sorting Hat? It said the houses have to stand together", "Ernie's already writing a speech about it 😅"]],
+    Ravenclaw: ["hp_luna", ["Hello. You have a Wrackspurt near your left ear.", "Don't worry, they're mostly harmless. Mostly."]],
+    Slytherin: ["hp_draco", ["Did you see Umbridge cut Dumbledore off at the feast? Father says that's only the beginning.", "Stick close this year. Things are about to get interesting."]]
+  }[house];
+  W.dms = { [firstDM[0]]: firstDM[1].map((x, i) => ({ f: "them", t: x, day, ts: t + i })) };
+  W.stories = [
+    { id: uid("s"), a: "hp_hermione", t: "S.P.E.W. hat count: 14 🧶", img: { d: "pile of lumpy hand-knitted woolly hats beside a common room fireplace", s: 1995 }, bg: 3, day, ts: t, seen: false },
+    { id: uid("s"), a: "hp_twins", t: "testing in progress. do not tell Filch. —F", img: { d: "box of brightly wrapped sweets labelled with a winking face on a dormitory bed", s: 1996 }, bg: 1, day, ts: t, seen: false }
+  ];
+  W.events = [
+    { id: uid("e"), title: "The Sorting Hat's warning", desc: "At the feast the Sorting Hat sang that the four houses must unite against danger from outside. Then Umbridge cut Dumbledore off mid-speech. Now your housemates are arguing about whether the Hat meant You-Know-Who.", choices: ["Say out loud that you believe Harry: Voldemort is back", "Call it Dumbledore's scare tactics", "Stay quiet and watch who says what"], day, done: false },
+    { id: uid("e"), title: "Something pulling the carriages", desc: "On the way up from Hogsmeade station, a dreamy fourth-year Ravenclaw insisted the carriages are pulled by winged black horses. Hardly anyone else sees anything, and people are laughing at her and at Harry, who says he sees them too.", choices: ["Say you see them too", "Laugh along with everyone else", "Quietly ask Luna what they are"], day, done: false }
+  ];
+  W.log = [
+    "[day 1] 1 Sep 1995: term starts. The Ministry has placed Dolores Umbridge at Hogwarts as Defence teacher; she interrupted Dumbledore's welcome speech",
+    "[day 1] Ron and Hermione, Draco and Pansy, Hannah and Ernie, Padma and Anthony Goldstein are the new fifth-year prefects",
+    `[day 1] ${c.name.trim()} arrived for fifth year in ${house}`
+  ];
+  W.notifs = [{ id: uid("n"), k: "dm", t: `${chars.find(x => x.id === firstDM[0]).name} sent you a message`, ts: t, read: false, ref: { dm: firstDM[0] } }, { id: uid("n"), k: "event", t: "2 events are waiting in Explore", ts: t, read: false }];
+  return W;
+}
+/* ================= ready-made world: Wizarding World sandbox =================
+   No fixed timeline. The player picks an era, a place, their role and a situation, and can change any
+   of them at any time (Explore → Story setup); the AI follows the latest setup. Each era starts with a
+   few canon characters; anyone else is one "Add" away. */
+const WW_PRESET = -3;
+const WW_LORE = `Wizarding World canon (the Harry Potter books, Fantastic Beasts and The Cursed Child where they apply). Keep magic, spells, potions, creatures, places, institutions, history and every canon character's personality faithful to canon for the chosen era. Canon characters only appear if they exist in that era, at the right age and in the right role (e.g. in the Marauders era Snape is a student, McGonagall a young teacher).
+The player can change the era, place, their role and the situation at any time. When the STORY SETUP changes, follow it right away as a time-skip or a new chapter, and keep continuity with the story memory where it makes sense.
+No phones or internet unless the setup says so: "the feed" is enchanted parchment that shares posts magically; DMs travel as charmed notes. British characters use British English; MACUSA characters use American English. Only bigoted characters use slurs like "Mudblood".`;
+/* [name, handle, bio, personality, picture phrase, emoji, followers, kind] */
+const WW_ERAS = {
+  founders: { label: "Founders' era (c. 990)", short: "Founders' era", place: "Hogwarts", role: "one of the very first Hogwarts students",
+    note: "Hogwarts has just been founded and the four founders still teach. There is no Ministry of Magic yet (wizards answer to the Wizards' Council) and no Daily Prophet; news travels by notices and gossip.",
+    cast: [["Godric Gryffindor", "godric.gryffindor", "founder · knight · will duel you", "Co-founder of Hogwarts from the West Country. Brave, bold, quick-tempered and chivalrous; carries a goblin-made sword. Salazar Slytherin's oldest friend, and more and more his rival.", "silver sword", "🦁", 9000],
+      ["Helga Hufflepuff", "helga.hufflepuff", "founder · all are welcome here", "Co-founder of Hogwarts from the Welsh valleys. Warm, fair and fiercely loyal; takes in every student the others turn away; famous for her food charms.", "golden cup", "🦡", 8000],
+      ["Rowena Ravenclaw", "rowena.ravenclaw", "founder · wit beyond measure", "Co-founder of Hogwarts from the Scottish glens. Brilliant, proud and a little remote; values learning above all; her daughter Helena quietly resents her.", "silver diadem", "🦅", 8500],
+      ["Salazar Slytherin", "salazar.slytherin", "founder · parselmouth", "Co-founder of Hogwarts from the fens. Shrewd, ambitious and a Parselmouth; distrusts Muggle-born students and argues the school should only take pure-bloods.", "green serpent", "🐍", 7000]],
+    news: [["Hogsmeade Crier", "hogsmeade.crier", "notices from the village square", "Village notices and gossip from Hogsmeade, read out by the crier.", "brass hand bell", "🔔", 3000, "news"]] },
+  beasts: { label: "Fantastic Beasts (1926–1932)", short: "1920s", place: "New York", role: "a young witch or wizard working near MACUSA",
+    note: "From 1926: Newt Scamander travels with a suitcase of creatures; MACUSA (President Seraphina Picquery) enforces Rappaport's Law and strict secrecy from No-Majs; Gellert Grindelwald is rising across Europe; Dumbledore teaches at Hogwarts and cannot move against Grindelwald himself.",
+    cast: [["Newt Scamander", "newt.scamander", "magizoologist · please don't open the case", "British magizoologist and former Hufflepuff: awkward with people, wonderful with creatures. Travels with a suitcase full of magical beasts while writing his book about them.", "leather suitcase", "🦡", 2000],
+      ["Tina Goldstein", "tina.goldstein", "MACUSA investigator · it's complicated", "Determined, principled MACUSA investigator in New York, recently demoted from Auror; follows the rules until doing the right thing means breaking them.", "new york skyline", "🗽", 3000],
+      ["Queenie Goldstein", "queenie.goldstein", "legilimens · baker · i know what you're thinking", "Tina's sister: warm, flirty and a natural Legilimens who hears people's thoughts. In love with Jacob, though American wizarding law forbids marrying a No-Maj.", "pink cupcake", "💗", 4000],
+      ["Jacob Kowalski", "jacob.kowalski", "baker · no-maj · what's a niffler", "Kind-hearted No-Maj cannery worker who dreams of opening a bakery; swept into the magical world by Newt's escaped creatures and somehow holding a charmed parchment.", "fresh bread", "🥐", 900]],
+    news: [["The New York Ghost", "newyorkghost", "America's wizarding newspaper", "MACUSA-era American wizarding newspaper: crime, Grindelwald rumours and No-Maj sightings.", "old newspaper", "📰", 90000, "news"],
+      ["The Daily Prophet", "dailyprophet", "Britain's wizarding newspaper", "British wizarding newspaper, close to the Ministry.", "folded newspaper", "📰", 200000, "news"]] },
+  riddle: { label: "Tom Riddle's Hogwarts (1940s)", short: "1940s", place: "Hogwarts", role: "a Hogwarts student in Tom Riddle's year",
+    note: "The 1940s: the Muggle war and Grindelwald's war in the background (Dumbledore defeats him in 1945). Armando Dippet is Headmaster, Dumbledore teaches Transfiguration, Slughorn teaches Potions and hosts the Slug Club. The Chamber of Secrets is opened in 1943: Myrtle dies and Hagrid is wrongly expelled.",
+    cast: [["Tom Riddle", "t.m.riddle", "slytherin prefect · top of the class", "Brilliant, handsome and polite Slytherin prefect whom teachers adore. Secretly ruthless and obsessed with power and his descent from Slytherin, gathering followers behind perfect manners.", "black diary", "📓", 5000],
+      ["Myrtle Warren", "myrtle.w", "ravenclaw · leave me alone", "Gloomy, sensitive Ravenclaw, teased for her glasses and spots, who spends too long crying in the girls' bathroom.", "round glasses", "👓", 120],
+      ["Rubeus Hagrid", "hagrid", "gryffindor · every creature deserves love", "Huge, gentle Gryffindor student, part giant, who secretly keeps dangerous creatures, including a young acromantula called Aragog, in a cupboard.", "spider web", "🕷️", 400],
+      ["Horace Slughorn", "prof.slughorn", "potions · host of the slug club", "Jovial Potions master and Head of Slytherin who collects talented, well-connected students for his Slug Club and adores crystallised pineapple. Tom Riddle is his favourite.", "pineapple", "🍍", 6000]],
+    news: [["The Daily Prophet", "dailyprophet", "Britain's wizarding newspaper", "British wizarding newspaper reporting the war with Grindelwald.", "old newspaper", "📰", 250000, "news"]] },
+  marauders: { label: "The Marauders (1971–1978)", short: "Marauders era", place: "Hogwarts", role: "a Hogwarts student in the Marauders' year",
+    note: "The 1970s: Voldemort's first rise and the First Wizarding War; Death Eaters recruit inside Hogwarts. Dumbledore is Headmaster. The Whomping Willow hides the passage to the Shrieking Shack, where Remus Lupin secretly transforms; James, Sirius and Peter become secret Animagi.",
+    cast: [["James Potter", "james.potter", "gryffindor chaser · prongs", "Cocky, funny, wealthy Gryffindor and gifted Chaser, leader of the Marauders; hopelessly in love with Lily Evans; picks on Snape.", "stag", "🦌", 6000],
+      ["Sirius Black", "sirius.black", "padfoot · not like my family", "Rebellious, handsome Gryffindor from a dark pure-blood family he despises; James's brother in all but blood; reckless, funny, loyal.", "newfoundland dog", "🐕", 7000],
+      ["Remus Lupin", "remus.lupin", "moony · prefect · tired", "Kind, clever, shabby Gryffindor prefect hiding that he is a werewolf; the conscience of the Marauders.", "full moon", "🌕", 2500],
+      ["Lily Evans", "lily.evans", "gryffindor · charms · NOT dating potter", "Bright, fiery Muggle-born Gryffindor, brilliant at Charms and Potions; Severus Snape's oldest friend, worried by his dark friends.", "white lily", "🌸", 5000],
+      ["Severus Snape", "s.snape", "slytherin · potions", "Sharp, bitter, poor Slytherin, brilliant at Potions and the Dark Arts; Lily's oldest friend; loathes James and Sirius; drifting toward future Death Eaters.", "cauldron", "🧪", 900]],
+    news: [["The Daily Prophet", "dailyprophet", "Britain's wizarding newspaper", "British wizarding newspaper reporting attacks and disappearances during the war.", "old newspaper", "📰", 300000, "news"]] },
+  trio: { label: "The Golden Trio (1991–1998)", short: "Harry's years", place: "Hogwarts", role: "a Hogwarts student in Harry Potter's year",
+    note: "Harry Potter's school years. Use the year in the player's setup (or pick one that fits) and follow book canon for it; Voldemort returns in June 1995.",
+    cast: [["Harry Potter", "h.potter", "gryffindor · seeker", "The Boy Who Lived: brave, loyal, sarcastic, quick to anger, hates being famous. Gryffindor Seeker.", "golden snitch", "⚡", 48000],
+      ["Hermione Granger", "hermione.granger", "have you read Hogwarts: A History?", "The cleverest witch of her age: rule-loving, bossy, fiercely loyal, Muggle-born Gryffindor.", "old books", "📚", 6000],
+      ["Ron Weasley", "ronweasley", "chudley cannons till i die", "Funny, loyal, insecure youngest Weasley son; hates spiders; Harry's best friend.", "chess set", "🧡", 4000],
+      ["Draco Malfoy", "d.malfoy", "slytherin · pure-blood · malfoy", "Smug, sneering Slytherin from a rich pure-blood family; Harry's rival; anxious under the bravado.", "cobra", "🐍", 15000],
+      ["Luna Lovegood", "luna.lovegood", "ravenclaw · mind the nargles", "Dreamy, honest Ravenclaw a year below Harry; believes in creatures nobody else does; her father edits The Quibbler.", "full moon", "🌙", 600]],
+    news: [["The Daily Prophet", "dailyprophet", "Britain's premier wizarding newspaper", "Ministry-friendly British wizarding newspaper.", "old newspaper", "📰", 450000, "news"],
+      ["The Quibbler", "thequibbler", "the other side of the story", "Eccentric magazine edited by Xenophilius Lovegood.", "vintage magazine", "🌀", 8000, "news"]] },
+  nextgen: { label: "Next generation (2017+)", short: "Next gen", place: "Hogwarts", role: "a Hogwarts student in Albus Potter's year",
+    note: "Nineteen years after the Battle of Hogwarts: Harry heads Magical Law Enforcement at the Ministry, Hermione becomes Minister for Magic, and their children are at Hogwarts. Muggle gadgets are common at home but don't work at Hogwarts.",
+    cast: [["Albus Potter", "albus.potter", "slytherin · not like my dad", "Harry's younger son, sorted into Slytherin: moody, sarcastic, tired of his famous father's shadow; Scorpius Malfoy's best friend.", "storm clouds", "🌩️", 9000],
+      ["Scorpius Malfoy", "scorpius.malfoy", "slytherin · sweets enthusiast · nerd", "Draco's son: sweet, nerdy, talkative and kind; hounded by a cruel rumour about his parentage; adores sweets from the trolley.", "candy", "🍬", 3000],
+      ["Rose Granger-Weasley", "rose.gw", "gryffindor · top marks", "Ron and Hermione's daughter: confident, clever, competitive Gryffindor.", "red rose", "🌹", 5000],
+      ["James Potter II", "james.s.potter", "gryffindor · prankster", "Harry's eldest son: popular, cheeky Gryffindor prankster who teases his little brother.", "golden snitch", "😼", 6000]],
+    news: [["The Daily Prophet", "dailyprophet", "Britain's wizarding newspaper", "British wizarding newspaper.", "old newspaper", "📰", 500000, "news"],
+      ["Witch Weekly", "witchweekly", "charms, gossip & the most charming smile", "Glossy wizarding magazine of gossip and celebrity.", "glossy magazine", "💄", 120000, "news"]] },
+  custom: { label: "Custom era", short: "Custom era", place: "Hogwarts", role: "a young witch or wizard", note: "", cast: [], news: [["The Daily Prophet", "dailyprophet", "wizarding news", "The wizarding newspaper of this era.", "old newspaper", "📰", 200000, "news"]] }
+};
+const WW_PLACES = ["Hogwarts", "Hogsmeade", "Diagon Alley", "Ministry of Magic", "New York", "Ilvermorny", "Beauxbatons", "Durmstrang"];
+function wwChar([name, handle, bio, desc, pic, e, followers, kind], inCircle) {
+  return { id: "ww_" + hashN(handle).toString(36), name, handle, bio, desc, look: "", av: { e, c: hashN(handle) % COLORS.length, st: AV_STYLES[hashN(handle) % AV_STYLES.length], sd: handle, pic },
+    followers, kind: kind || "char", unlocked: !!inCircle, followsMe: !!inCircle, iFollow: !!inCircle, rel: inCircle ? 10 : 0, chem: "" };
+}
+const eraLabel = sb => sb.era === "custom" ? (sb.eraText || "Custom era") : (WW_ERAS[sb.era] || WW_ERAS.custom).label;
+function sandboxLore(W) {
+  const sb = W.sandbox, E = WW_ERAS[sb.era] || WW_ERAS.custom;
+  return WW_LORE + `\nSTORY SETUP (the player can change this at any time; always follow the latest setup):
+- Era: ${eraLabel(sb)}${E.note ? ". " + E.note : ""}
+- Main place: ${sb.place || "Hogwarts"}
+- The player is: ${sb.role || E.role}
+- Current situation: ${sb.situation || "(none set: invent hooks that fit the era and place)"}`;
+}
+/* add an era's canon cast to the world (missing ones only); returns how many were added */
+function addEraCast(W, era, inCircle) {
+  const E = WW_ERAS[era] || WW_ERAS.custom; let n = 0;
+  for (const x of [...E.cast, ...E.news]) if (!findCharByHandle(W, x[1])) { W.chars.push(wwChar(x, inCircle && !x[7])); n++; }
+  return n;
+}
+function buildWizardingWorld(c) {
+  const sb = { era: c.era || "trio", eraText: String(c.eraText || "").trim(), place: String(c.place || "").trim() || "Hogwarts", role: String(c.role || "").trim(), situation: String(c.situation || "").trim() };
+  const E = WW_ERAS[sb.era] || WW_ERAS.custom, t = Date.now();
+  if (!sb.role) sb.role = E.role;
+  const W = {
+    id: uid("w"), name: "Wizarding World", emoji: "🪄", fandom: "Wizarding World (Harry Potter canon)", imgStyle: c.imgStyle || "art", sandbox: sb,
+    desc: `An open Wizarding World story. Era, place, role and situation are in the story setup and can change at any time.`,
+    madness: c.madness || 3, muteNews: false, day: 1, createdAt: t, savedAt: 0,
+    me: { name: c.name.trim(), handle: c.handle, bio: c.bio.trim() || sb.role, look: c.look.trim(), vibe: c.vibe, av: Object.assign({}, c.av, { pic: String(c.pic || "").trim() || "snowy owl" }),
+      followers: rnd(80, 260), humor: 10, aura: 10, xp: 0, level: 1, sp: 1, unlocks: 0,
+      skills: [{ name: "Spellwork", desc: "Duels, charms and clever magic land more often", lv: 1 }, { name: "Charm", desc: "People open up and trust you faster", lv: 1 }, { name: "Sneaking", desc: "Secrets, rule-breaking and getting away with it", lv: 1 }],
+      goal: "Leave your mark on the wizarding world",
+      milestones: ["Make your name known", "Win a canon character's trust", "Make a real enemy", "Uncover a secret", "Survive a scandal", "Win something big", "Change the course of the story", "Become a legend", "Write your own ending"].map(x => ({ t: x, done: false })),
+      boosts: { viral: 1, clout: 1 } },
+    chars: [], npcs: {}, posts: [], dms: {}, dmRead: {}, dmMeta: {}, stories: [], notifs: [], log: [], events: [], invites: [], trends: [], act: null
+  };
+  addEraCast(W, sb.era, true);
+  W.log = [`[day 1] Story setup: ${eraLabel(sb)} · ${sb.place} · ${W.me.name} is ${sb.role}${sb.situation ? " · " + sb.situation : ""}`];
+  return W;
+}
+function cwWizarding() {
+  const c = S.cw;
+  if (!c.name.trim()) return toast("Add your name first");
+  if (c.era === "custom" && !String(c.eraText || "").trim()) return toast("Describe your custom era first");
+  c.handle = cleanHandle(c.handle || c.name) || "wizard" + rnd(100, 999);
+  const W = buildWizardingWorld(c);
+  S.W = W; S.G.worlds.push(worldIndex(W));
+  S.snaps = []; S.view = { screen: "world", tab: "feed", post: null, dm: null };
+  saveWorld(); flushWorld(); closeLayer(); render();
+  toast("Welcome to the Wizarding World 🪄");
+  if (hasAI()) nextDay({ opening: true });   // the AI sets the opening scene for the chosen era
+}
+
+/* ---------- story setup: change era, place, role, situation and cast at any time ---------- */
+function sheetSetup() {
+  const W = S.W, f = S.setup, E = WW_ERAS[f.era] || WW_ERAS.custom;
+  const circle = W.chars.filter(c => c.unlocked && c.kind !== "news");
+  const eraCast = [...E.cast].filter(x => { const c = findCharByHandle(W, x[1]); return !c || !c.unlocked; });
+  return head("Story setup") + `<div class="sh-body"><div class="col gut" style="gap:14px">
+    <div class="small muted">Change anything, any time. The AI follows the new setup from your next action, or start a new chapter right away.</div>
+    <div class="field"><label>Era</label>${chips(Object.keys(WW_ERAS).map(k => [k, WW_ERAS[k].label]), f.era, "suEra")}
+      ${f.era === "custom" ? `<input class="in" id="suEraText" data-su="eraText" maxlength="160" value="${esc(f.eraText || "")}" placeholder="e.g. Hogwarts in the 1890s, or an alternate timeline where Cedric survived">` : `<div class="tiny muted">${esc(E.note)}</div>`}</div>
+    <div class="field"><label for="suPlace">Main place</label>${chips(WW_PLACES.map(x => [x, x]), f.place, "suPlace")}
+      <input class="in" id="suPlace" data-su="place" maxlength="80" value="${esc(f.place || "")}" placeholder="or type any place"></div>
+    <div class="field"><label for="suRole">You are…</label><input class="in" id="suRole" data-su="role" maxlength="160" value="${esc(f.role || "")}" placeholder="${esc(E.role)}"></div>
+    <div class="field"><label for="suSit">Situation / storyline</label><textarea class="in" id="suSit" data-su="situation" maxlength="600" placeholder="e.g. The Triwizard Tournament is back and you were picked; or: someone has stolen the Sorting Hat">${esc(f.situation || "")}</textarea></div>
+    <div class="field"><label>Your circle</label>
+      ${circle.length ? `<div class="col" style="gap:8px">${circle.map(c => `<div class="row">${avatar(c.av, c.id, "sm")}<b class="grow ell">${esc(c.name)}</b><button class="btn sm ghost" data-act="charRemove" data-id="${esc(c.id)}">Remove</button></div>`).join("")}</div>` : `<div class="small muted">No one yet.</div>`}
+      ${eraCast.length ? `<div class="tiny muted" style="margin-top:6px">Canon characters of this era:</div><div class="row wrap" style="gap:6px">${eraCast.map(x => `<button class="chip" data-act="suAddCast" data-id="${esc(x[1])}">${esc(x[5])} ${esc(x[0])}</button>`).join("")}</div>` : ""}
+      <button class="btn ghost sm" data-act="addChar" style="align-self:flex-start;margin-top:6px">${ic("plus")} Add any character</button></div>
+    <div class="row wrap"><button class="btn accent grow" data-act="suSave" data-id="chapter" ${isBusy() ? "disabled" : ""}>Save &amp; start a new chapter</button><button class="btn ghost" data-act="suSave">Just save</button></div>
+  </div></div>`;
+}
+function saveSetup(chapter) {
+  const W = S.W, f = S.setup, old = W.sandbox;
+  if (f.era === "custom" && !String(f.eraText || "").trim()) return toast("Describe your custom era first");
+  const sb = { era: f.era, eraText: String(f.eraText || "").trim(), place: String(f.place || "").trim() || "Hogwarts", role: String(f.role || "").trim() || (WW_ERAS[f.era] || WW_ERAS.custom).role, situation: String(f.situation || "").trim() };
+  const changes = [];
+  snapshot();
+  if (sb.era !== old.era || sb.eraText !== old.eraText) { changes.push("era → " + eraLabel(sb)); addEraCast(W, sb.era, false); }
+  if (sb.place !== old.place) changes.push("place → " + sb.place);
+  if (sb.role !== old.role) changes.push(`${W.me.name} is now ${sb.role}`);
+  if (sb.situation !== old.situation) changes.push("situation → " + (sb.situation || "open"));
+  W.sandbox = sb;
+  if (changes.length) remember("Story setup changed: " + changes.join("; "));
+  saveWorld(); closeLayer(); render();
+  if (chapter) nextDay({ chapter: changes.join("; ") || "same setup, fresh chapter" });
+  else toast(changes.length ? "Story setup saved" : "Nothing changed");
+}
+
+/* ---------- edit a character (any world) ---------- */
+function sheetEditChar() {
+  const W = S.W, c = W.chars.find(x => x.id === S.charView), f = S.editChar; if (!c || !f) return head("");
+  return head("Edit " + esc(c.name)) + `<div class="sh-body"><div class="col gut" style="gap:14px">
+    <div class="field"><label for="ecName">Name</label><input class="in" id="ecName" data-ec="name" maxlength="40" value="${esc(f.name)}"></div>
+    <div class="field"><label for="ecHandle">Username (@)</label><input class="in" id="ecHandle" data-ec="handle" maxlength="24" value="${esc(f.handle)}"></div>
+    <div class="field"><label for="ecBio">Bio</label><input class="in" id="ecBio" data-ec="bio" maxlength="160" value="${esc(f.bio)}"></div>
+    <div class="field"><label for="ecDesc">Personality, voice &amp; secrets (the AI plays them from this)</label><textarea class="in" id="ecDesc" data-ec="desc" maxlength="1500" style="min-height:120px">${esc(f.desc)}</textarea></div>
+    <div class="field"><label for="ecPic">Profile picture (a few words)</label><input class="in" id="ecPic" data-ec="pic" maxlength="80" value="${esc(f.pic)}" placeholder="e.g. snowy owl"></div>
+    <button class="btn accent" data-act="ecSave">Save</button>
+  </div></div>`;
+}
+
+function cwHogwarts() {
+  const c = S.cw;
+  if (!c.name.trim()) return toast("Add your name first");
+  c.handle = (c.handle || c.name).replace(/^@/, "").replace(/\s+/g, "").slice(0, 24) || "wizard" + rnd(100, 999);
+  const W = buildHogwarts(c);
+  S.W = W;
+  S.G.worlds.push(worldIndex(W));
+  S.snaps = []; S.view = { screen: "world", tab: "feed", post: null, dm: null };
+  saveWorld(); flushWorld(); closeLayer(); render();
+  toast(`Welcome to Hogwarts, ${W.me.house} ${HOUSES[W.me.house].em}`);
+}
 const VIBES = ["Funny", "Mysterious", "Spicy", "Sweet", "Villain", "Main character", "Fresh newcomer", "Already famous"];
 const EMOJIS = ["😎", "🌙", "🦊", "🐰", "🐻‍❄️", "⭐", "🍓", "🐯", "🦋", "🎀", "🖤", "🍀", "👑", "🐉", "🌸", "🧸", "🎧", "🐼", "🔥", "🍜"];
 function swatches(cur, act) { return `<div class="row wrap" style="gap:8px">${COLORS.map((_, i) => `<button data-act="${act}" data-id="${i}" aria-label="Color ${i + 1}" style="width:30px;height:30px;border-radius:50%;${avStyle({ c: i })};${cur === i ? "box-shadow:0 0 0 2px var(--surface),0 0 0 4px var(--accent)" : ""}"></button>`).join("")}</div>`; }
 function avPicker(av, key, pfx) {
+  if (avMode() !== "cartoon" && pfx !== "lf") return `<div class="row">${avatar(av, key, "lg")}<div class="grow small muted">${avMode() === "aesthetic" ? "Your profile picture is a photo matched to the words you write below. Leave it empty and one is picked to fit you." : "Emoji-only profile pictures are on (Settings)."}</div></div>`;
   return `<div class="row">${avatar(av, key, "lg")}<div class="col grow" style="gap:8px"><button class="btn sm soft" data-act="${pfx}Shuffle" style="align-self:flex-start">🎲 Shuffle look</button><div class="tiny muted">Pick a style and color, shuffle until it feels right.</div></div></div>
     <div class="row wrap" style="gap:6px">${AV_STYLES.map(s => `<button data-act="${pfx}Style" data-id="${s}" aria-label="${s}" aria-pressed="${av.st === s}" style="width:48px;height:48px;border-radius:12px;padding:2px;background:${av.st === s ? "var(--accent-soft)" : "var(--surface-2)"};${av.st === s ? "outline:2px solid var(--accent)" : ""}"><img src="${esc(avURL({ st: s, sd: av.sd }, key))}" alt="" style="width:100%;height:100%" onerror="this.remove()"></button>`).join("")}</div>
     ${swatches(av.c, pfx + "Color")}`;
 }
 function startCreate() {
-  S.cw = { step: 1, preset: 0, custom: "", madness: 3, imgStyle: "photo", name: "", handle: "", bio: "", look: "", vibe: "Funny", av: { e: "😎", c: 0, st: "notionists", sd: uid() }, libPick: [], bios: [], gen: null, pick: null, busy: false };
+  S.cw = { step: 1, preset: 0, custom: "", madness: 3, imgStyle: "photo", name: "", handle: "", bio: "", look: "", vibe: "Funny", av: { e: "😎", c: 0, st: "notionists", sd: uid() }, libPick: [], bios: [], gen: null, pick: null, busy: false, house: "Sorting Hat", pic: "", era: "trio", eraText: "", place: "Hogwarts", role: "", situation: "" };
   openSheet(sheetCreate, true);
 }
 function sheetCreate() {
@@ -1696,6 +2236,8 @@ function sheetCreate() {
   if (c.step === 1) {
     b = `<div class="col gut" style="gap:14px">
       <div class="small muted">Pick a ready-made world, or type any fandom, series or scenario you want to live in.</div>
+      <button class="preset" data-act="cwPreset" data-id="${HP_PRESET}" aria-pressed="${c.preset === HP_PRESET}" style="width:100%"><div class="row" style="gap:10px"><span class="em">⚡</span><div class="grow"><b>Hogwarts · 1995–96</b> <span class="tiny" style="color:var(--accent);font-weight:700">CANON</span><div class="tiny muted">Harry Potter, fifth year: Umbridge, the D.A., the Prophet's smear campaign. Start with 3 canon friends from your house and add any canon character whenever you like; the rest of the castle is full of students who fit what you post about.</div></div></div></button>
+      <button class="preset" data-act="cwPreset" data-id="${WW_PRESET}" aria-pressed="${c.preset === WW_PRESET}" style="width:100%"><div class="row" style="gap:10px"><span class="em">🪄</span><div class="grow"><b>Wizarding World</b> <span class="tiny" style="color:var(--violet);font-weight:700">SANDBOX</span><div class="tiny muted">Any era (Founders, Fantastic Beasts, Riddle, Marauders, Harry's years, next gen or your own), any place, any role and storyline. Change them whenever you like; canon characters join when you add them.</div></div></div></button>
       <div class="grid2">${PRESETS.map((p, i) => `<button class="preset" data-act="cwPreset" data-id="${i}" aria-pressed="${c.preset === i}"><span class="em">${p[0]}</span><b>${esc(p[1])}</b><span class="tiny muted">${esc(p[2])}</span></button>`).join("")}
         <button class="preset" data-act="cwPreset" data-id="-1" aria-pressed="${c.preset === -1}"><span class="em">✏️</span><b>Create your own</b><span class="tiny muted">Any fandom, or a story you made up</span></button></div>
       ${c.preset === -1 ? `<div class="field"><label for="cwCustom">World, fandom or scenario</label><textarea class="in" id="cwCustom" data-cw="custom" maxlength="1500" placeholder="e.g. Harry Potter, 6th year, I'm a transfer student sorted into Slytherin">${esc(c.custom)}</textarea></div>
@@ -1705,16 +2247,24 @@ function sheetCreate() {
       <button class="btn accent block" data-act="cwNext">Next</button>
     </div>`;
   } else if (c.step === 2) {
+    c.av.pic = String(c.pic || "").trim() || (c.preset === HP_PRESET && HOUSES[c.house] ? HOUSES[c.house].pic : derivePic(c.name || "new account", c.handle || "me", c.vibe));
     b = `<div class="col gut" style="gap:14px">
       ${avPicker(c.av, "cw", "cw")}
       <div class="field"><label for="cwName">Display name</label><input class="in" id="cwName" data-cw="name" maxlength="40" value="${esc(c.name)}" placeholder="e.g. Mia"></div>
       <div class="field"><label for="cwHandle">Username (@)</label><input class="in" id="cwHandle" data-cw="handle" maxlength="24" value="${esc(c.handle)}" placeholder="e.g. mia.shoots"></div>
+      ${c.preset === WW_PRESET ? `<div class="field"><label>Era</label>${chips(Object.keys(WW_ERAS).map(k => [k, WW_ERAS[k].label]), c.era, "cwEra")}
+        ${c.era === "custom" ? `<input class="in" id="cwEraText" data-cw="eraText" maxlength="160" value="${esc(c.eraText || "")}" placeholder="e.g. Hogwarts in the 1890s, or a world where Voldemort won">` : ""}</div>
+      <div class="field"><label for="cwPlace">Main place</label>${chips(WW_PLACES.map(x => [x, x]), c.place, "cwPlace")}<input class="in" id="cwPlace" data-cw="place" maxlength="80" value="${esc(c.place || "")}" placeholder="or type any place"></div>
+      <div class="field"><label for="cwRole">You are…</label><input class="in" id="cwRole" data-cw="role" maxlength="160" value="${esc(c.role || "")}" placeholder="${esc((WW_ERAS[c.era] || WW_ERAS.custom).role)} (e.g. a 5th-year Ravenclaw)"></div>
+      <div class="field"><label for="cwSit">Situation / storyline (optional)</label><textarea class="in" id="cwSit" data-cw="situation" maxlength="600" placeholder="e.g. A secret duelling club meets at midnight and you just got an invitation">${esc(c.situation || "")}</textarea><div class="tiny muted">You can change the era, place, role and storyline later in Explore → Story setup.</div></div>` : ""}
+      ${c.preset === HP_PRESET ? `<div class="field"><label>Your house</label>${chips([...Object.keys(HOUSES).map(h => [h, HOUSES[h].em + " " + h]), ["Sorting Hat", "🎩 Let the Sorting Hat choose"]], c.house, "cwHouse")}<div class="tiny muted">Your house decides who's in your circle at the start and your three skills.</div></div>` : ""}
       <div class="field"><label>Vibe</label>${chips(VIBES.map(v => [v, v]), c.vibe, "cwVibe")}</div>
+      <div class="field"><label for="cwPic">Profile picture (describe it)</label><input class="in" id="cwPic" data-cw="pic" maxlength="200" value="${esc(c.pic || "")}" placeholder="${c.preset === HP_PRESET ? "a few words, e.g. snowy owl" : "a few words, e.g. black cat, vinyl records"}"></div>
       <div class="field"><label for="cwLook">How you look (used for photos of you)</label><input class="in" id="cwLook" data-cw="look" maxlength="200" value="${esc(c.look)}" placeholder="e.g. short black bob, silver hoops, oversized denim jacket"></div>
       <div class="field"><label for="cwBio">Bio / backstory (more detail = better role-play)</label><textarea class="in" id="cwBio" data-cw="bio" maxlength="1500" placeholder="Who are you, what do you want, what are you hiding?">${esc(c.bio)}</textarea>
         <button class="btn soft sm" data-act="cwBioAI" style="align-self:flex-start" ${c.busy ? "disabled" : ""}>${c.busy ? '<span class="spin"></span>' : "✨"} Suggest bios</button>
         ${c.bios.length ? `<div class="col" style="gap:6px">${c.bios.map((x, i) => `<button class="opt small" data-act="cwBioPick" data-id="${i}">${esc(x)}</button>`).join("")}</div>` : ""}</div>
-      <div class="row"><button class="btn ghost" data-act="cwBack">Back</button><button class="btn accent grow" data-act="cwGen">Build world</button></div>
+      <div class="row"><button class="btn ghost" data-act="cwBack">Back</button><button class="btn accent grow" data-act="cwGen">${c.preset === HP_PRESET ? "Board the Hogwarts Express" : c.preset === WW_PRESET ? "Enter the Wizarding World" : "Build world"}</button></div>
     </div>`;
   } else if (c.step === 3) {
     b = `<div class="empty"><div class="spin" style="margin:0 auto 14px;width:30px;height:30px"></div><b>Building your world, its cast and the opening scene</b><div class="small" style="margin-top:6px">Free models can take 20–90 seconds.</div></div>`;
@@ -1730,7 +2280,7 @@ function sheetCreate() {
   }
   return head(title, `<span class="tiny muted num">${Math.min(c.step, 4)}/4</span>`) + `<div class="sh-body">${b}</div>`;
 }
-const worldReq = c => c.preset === -1 ? c.custom : PRESETS[c.preset][1] + " — " + PRESETS[c.preset][2];
+const worldReq = c => c.preset === -1 ? c.custom : c.preset === WW_PRESET ? `Wizarding World canon, ${eraLabel({ era: c.era, eraText: c.eraText })}, at ${c.place || "Hogwarts"}; the persona is ${c.role || "a young witch or wizard"}` : c.preset === HP_PRESET ? `Harry Potter book canon, Hogwarts 1995-96 (Order of the Phoenix year); the persona is a fifth-year ${c.house || ""} student` : PRESETS[c.preset][1] + " — " + PRESETS[c.preset][2];
 async function cwBioAI() {
   const c = S.cw; c.busy = true; refreshSheet();
   try {
@@ -1747,7 +2297,7 @@ async function cwGenerate() {
   const c = S.cw;
   if (!c.name.trim()) return toast("Add a display name first");
   if (c.preset === -1 && !c.custom.trim()) { c.step = 1; refreshSheet(); return toast("Describe the world or fandom first"); }
-  if (!S.G.apiKey) return openApi("Add your OpenRouter key to build a world.");
+  if (!hasAI()) return openApi("Add a free AI key (OpenRouter, Groq or Gemini) to build a world.");
   c.handle = (c.handle || c.name).replace(/^@/, "").replace(/\s+/g, "").slice(0, 24) || "me" + rnd(100, 999);
   c.step = 3; refreshSheet();
   const libs = S.G.library.filter(l => c.libPick.includes(l.id));
@@ -1765,8 +2315,8 @@ Reply with ONLY this JSON:
 "skills":[{"name":"skill name (2-3 words)","desc":"what it helps with"}],
 "goal":"the player's main goal in one sentence",
 "milestones":["9 ordered story milestones toward the goal, short"],
-"characters":[{"name":"","handle":"lowercase_handle_no_at","bio":"public bio, max 80 chars","desc":"personality, voice, posting style, secrets, how they see the player: 3-4 sentences","look":"appearance in under 20 words (hair, style, signature items), no names","emoji":"one emoji","followers":0,"greeting":"the first DM they'd send the player if they became the player's first follower"}],
-"news":[{"name":"","handle":"","bio":"","emoji":""}],
+"characters":[{"name":"","handle":"lowercase_handle_no_at","bio":"public bio, max 80 chars","desc":"personality, voice, posting style, secrets, how they see the player: 3-4 sentences","look":"appearance in under 20 words (hair, style, signature items), no names","pic":"profile picture as a 2-4 word photo-search phrase naming one real object, animal or place that fits them (e.g. 'silver ring', 'snowy owl'); never a person or a name","emoji":"one emoji","followers":0,"greeting":"the first DM they'd send the player if they became the player's first follower"}],
+"news":[{"name":"","handle":"","bio":"","emoji":"","pic":"2-4 word photo-search phrase, e.g. 'old newspaper'"}],
 "opening_posts":[{"handle":"handle of a character or news account","text":"post that sets the scene","image":"photo description or null"}],
 "first_event":{"title":"","desc":"2-3 sentences","choices":["","",""]},
 "trends":["#...","#...","#...","#..."]}
@@ -1776,7 +2326,7 @@ Counts: skills exactly 3, milestones exactly 9, characters exactly 9 (main cast 
     const chars = (r.characters || []).filter(x => x && x.name).slice(0, 10).map((x, i) => ({
       id: uid("c"), name: String(x.name).slice(0, 40), handle: String(x.handle || x.name).replace(/^@/, "").replace(/\s+/g, "_").slice(0, 24),
       bio: String(x.bio || "").slice(0, 160), desc: String(x.desc || "").slice(0, 1500), look: String(x.look || "").slice(0, 200),
-      av: { e: String(x.emoji || "🙂").slice(0, 4), c: (i * 3 + 1) % COLORS.length, st: AV_STYLES[i % AV_STYLES.length], sd: uid() },
+      av: { e: String(x.emoji || "🙂").slice(0, 4), c: (i * 3 + 1) % COLORS.length, st: AV_STYLES[i % AV_STYLES.length], sd: uid(), pic: String(x.pic || "").slice(0, 200) || undefined },
       followers: Math.max(10, Math.round(num(x.followers)) || rnd(500, 30000)), greeting: String(x.greeting || ""), unlocked: false, followsMe: false, iFollow: false, kind: "char", rel: 0, chem: ""
     }));
     for (const l of libs) chars.push({ id: uid("c"), lib: l.id, name: l.name, handle: l.handle, bio: l.bio, desc: l.desc, look: l.look || "", av: l.av, followers: rnd(800, 40000), greeting: "", unlocked: false, followsMe: false, iFollow: false, kind: "char", rel: 5, chem: "" });
@@ -1791,14 +2341,14 @@ function cwStart() {
   const W = {
     id: uid("w"), name: g.world_name, emoji: g.emoji, desc: g.description, fandom: c.preset === -1 ? c.custom : PRESETS[c.preset][1],
     madness: c.madness, muteNews: false, imgStyle: c.imgStyle, day: 1, createdAt: Date.now(), savedAt: 0,
-    me: { name: c.name.trim(), handle: c.handle, bio: c.bio.trim(), look: c.look.trim(), vibe: c.vibe, av: c.av, followers: rnd(80, 260), humor: 10, aura: 10, xp: 0, level: 1, sp: 1, unlocks: 0,
+    me: { name: c.name.trim(), handle: c.handle, bio: c.bio.trim(), look: c.look.trim(), vibe: c.vibe, av: Object.assign({}, c.av, { pic: String(c.pic || "").trim() || derivePic(c.name.trim(), c.handle, c.bio.trim() || c.vibe) }), followers: rnd(80, 260), humor: 10, aura: 10, xp: 0, level: 1, sp: 1, unlocks: 0,
       skills: (r.skills || []).slice(0, 3).map(s => ({ name: String(s.name || "Skill"), desc: String(s.desc || ""), lv: 1 })), goal: String(r.goal || ""),
       milestones: (r.milestones || []).slice(0, 9).map(t => ({ t: String(t), done: false })), boosts: { viral: 1, clout: 1 } },
     chars: g.chars, posts: [], dms: {}, dmRead: {}, dmMeta: {}, stories: [], notifs: [], log: [], events: [], invites: [], trends: (r.trends || []).slice(0, 5).map(String), act: null
   };
   while (W.me.skills.length < 3) W.me.skills.push({ name: ["Confidence", "Wit", "Charm"][W.me.skills.length], desc: "", lv: 1 });
   while (W.me.milestones.length < 9) W.me.milestones.push({ t: "Grow your reputation", done: false });
-  for (const n of (r.news || []).slice(0, 2)) W.chars.push({ id: uid("c"), name: String(n.name || "News"), handle: String(n.handle || "news").replace(/^@/, "").replace(/\s+/g, "_"), bio: String(n.bio || ""), desc: String(n.bio || "news account"), av: { e: String(n.emoji || "📰"), c: 7, st: "initials", sd: String(n.name || "News") }, followers: rnd(20000, 300000), unlocked: false, kind: "news", rel: 0, chem: "" });
+  for (const n of (r.news || []).slice(0, 2)) W.chars.push({ id: uid("c"), name: String(n.name || "News"), handle: String(n.handle || "news").replace(/^@/, "").replace(/\s+/g, "_"), bio: String(n.bio || ""), desc: String(n.bio || "news account"), av: { e: String(n.emoji || "📰"), c: 7, st: "initials", sd: String(n.name || "News"), pic: String(n.pic || "").slice(0, 200) || undefined }, followers: rnd(20000, 300000), unlocked: false, kind: "news", rel: 0, chem: "" });
   const first = W.chars[c.pick];
   first.unlocked = first.followsMe = first.iFollow = true; first.rel = 15;
   S.W = W;
@@ -1821,7 +2371,6 @@ function sheetShop() {
     <div class="row wrap"><span class="pill gem num">${ic("gem")}${G.gems} gems</span>${W ? `<span class="pill num">🚀 ${W.me.boosts.viral}</span><span class="pill num">📣 ${W.me.boosts.clout}</span>` : ""}</div>
     ${item("🚀", "Viral boost", W ? "Your next boosted post is guaranteed to blow up (this world)" : "Open a world to buy boosts", "25 💎", "buyViral", G.gems < 25 || !W)}
     ${item("📣", "Clout boost", W ? "A boosted post gains double followers (this world)" : "Open a world to buy boosts", "20 💎", "buyClout", G.gems < 20 || !W)}
-    ${item("🎟️", "Extra unlock", W ? "Unlock one more character right away (this world)" : "Open a world first", "60 💎", "buyUnlock", G.gems < 60 || !W)}
     <div class="small muted">Gems come free from daily check-ins, level-ups, milestones and achievements. There is no real-money anything here.</div>
   </div></div>`;
 }
@@ -1832,11 +2381,12 @@ function sheetSettings() {
   return head("Settings") + `<div class="sh-body"><div class="col gut" style="gap:16px">
     ${CLOUD.state !== "off" ? `<button class="btn soft" data-act="account">${ic("user")} Account & cloud save</button><div class="tiny muted" style="margin-top:-10px">${esc(cloudLabel())}</div>` : ""}
     ${canInstall() ? `<button class="btn soft" data-act="install">📲 Install as an app</button>` : ""}
-    <button class="btn soft" data-act="api">${ic("key")} API & usage (OpenRouter)</button>
+    <button class="btn soft" data-act="api">${ic("key")} AI providers &amp; usage</button>
     <div class="field"><label>Theme</label>${chips([["", "System"], ["light", "Light"], ["dark", "Dark"]], G.theme, "setTheme")}</div>
     <div class="field"><label>Photos in posts & stories</label>${chips([["ai", "AI photos"], ["stock", "Stock photos"], ["off", "Off"]], G.imgMode, "setImg")}
-      <div class="tiny muted">AI photos are drawn free by Pollinations to match each post. The free service is rate-limited, so they appear one by one. Stock photos load instantly but are random.</div></div>
-    <label class="row card" style="padding:12px;cursor:pointer"><div class="grow"><b>Illustrated avatars</b><div class="small muted">Profile pictures from DiceBear (free). Off shows emoji.</div></div><input type="checkbox" id="avTog" data-act="avTog" ${G.avatars !== false ? "checked" : ""} style="width:22px;height:22px;accent-color:var(--accent)"></label>
+      <div class="tiny muted">AI photos are drawn free by Pollinations to match each post when it lets us in; otherwise a matching free photo from Wikimedia Commons is used. Stock photos load instantly but are random.</div></div>
+    <div class="field"><label>Profile pictures</label>${chips([["aesthetic", "Aesthetic (AI)"], ["cartoon", "Illustrated"], ["emoji", "Emoji only"]], avMode(), "setAvMode")}
+      <div class="tiny muted">Aesthetic pictures are free photos from Wikimedia Commons matched to each account's vibe (a bonsai for a plant nerd, a black kitten for a cat person). Real photos you set on a profile always show.</div></div>
     <button class="btn soft" data-act="library">🧬 My characters (${G.library.length})</button>
     <div class="card col" style="gap:8px"><b>Backup</b><div class="small muted">${CLOUD.user ? "Your save is in the cloud and on this device. Export makes an extra copy you keep yourself." : "Everything is saved in this browser. Sign in for cloud save, or export to move your save by hand."}</div>
       <div class="row wrap"><button class="btn sm soft" data-act="exportSave">Export save</button><button class="btn sm soft" data-act="importOpen">Import save</button></div>
@@ -1934,6 +2484,9 @@ function sheetWorldSettings() {
     <div class="field"><label for="wsImg">Photo style</label><select class="in" id="wsImg">${[["photo", "Realistic photos"], ["anime", "Anime"], ["art", "Digital art"]].map(([k, l]) => `<option value="${k}" ${(W.imgStyle || "photo") === k ? "selected" : ""}>${l}</option>`).join("")}</select></div>
     <label class="row card" style="padding:12px;cursor:pointer"><div class="grow"><b>Mute news accounts</b><div class="small muted">Stop news and tea pages from posting about you</div></div><input type="checkbox" id="wsMute" ${W.muteNews ? "checked" : ""} style="width:22px;height:22px;accent-color:var(--accent)"></label>
     <button class="btn accent" data-act="wsSave">Save</button>
+    ${W.sandbox ? `<button class="btn soft" data-act="setup">📜 Story setup (era, place, role, situation)</button>` : ""}
+    <div class="card col" style="gap:8px"><b>Real profile photos</b><div class="small muted">Find real photos on Wikipedia for every character who doesn't have one yet. For film and TV characters this uses the actor who played them${hasAI() ? " (the AI fills in actors it's sure about)" : ""}.</div>
+      <button class="btn sm soft" data-act="castPhotos" style="align-self:flex-start" ${S.castBusy ? "disabled" : ""}>${S.castBusy ? '<span class="spin"></span> Searching…' : "📷 Find photos for the cast"}</button></div>
     <div class="card col" style="gap:8px"><b>Delete this world</b>
       ${st.confirm ? `<div class="row"><button class="btn sm" style="background:var(--bad);color:#fff" data-act="wsDelete">Yes, delete it</button><button class="btn sm ghost" data-act="wsCancel">Cancel</button></div>` : `<button class="btn sm ghost" data-act="wsAskDelete" style="align-self:flex-start">Delete ${esc(W.name)}</button>`}</div>
   </div></div>`;
@@ -1944,8 +2497,10 @@ function sheetEditMe() {
   const me = S.W.me, e = S.editMe || (S.editMe = { av: { st: "notionists", sd: uid(), ...me.av } });
   return head("Edit profile") + `<div class="sh-body"><div class="col gut" style="gap:14px">
     ${avPicker(e.av, "me", "em")}
+    <div class="row wrap"><button class="btn sm soft" data-act="photoMe">${ic("camera")} ${e.av.img ? "Change photo" : "Use a real photo"}</button>${e.av.img ? `<span class="tiny muted">A photo is set. Remove it to use the illustration again.</span>` : ""}</div>
     <div class="field"><label for="emName">Display name</label><input class="in" id="emName" maxlength="40" value="${esc(e.name ?? me.name)}"></div>
     <div class="field"><label for="emHandle">Username (@)</label><input class="in" id="emHandle" maxlength="24" value="${esc(e.handle ?? me.handle)}"></div>
+    <div class="field"><label for="emPic">Profile picture (describe it)</label><input class="in" id="emPic" maxlength="200" value="${esc(e.pic ?? (me.av.picAuto ? "" : me.av.pic || ""))}" placeholder="a few words, e.g. snowy owl"></div>
     <div class="field"><label for="emLook">How you look (for photos)</label><input class="in" id="emLook" maxlength="200" value="${esc(e.look ?? me.look ?? "")}"></div>
     <div class="field"><label for="emBio">Bio</label><textarea class="in" id="emBio" maxlength="1500">${esc(e.bio ?? me.bio)}</textarea></div>
     <button class="btn accent" data-act="emSave">Save</button>
@@ -1967,13 +2522,222 @@ function sheetChar() {
       <div class="row">${avatar(c.av, c.id, "lg", c.kind === "news" ? "news" : "")}<div class="grow"><div class="row" style="gap:5px"><h2 style="font-size:20px">${esc(c.name)}</h2>${num(c.followers) >= 10000 || c.kind === "news" ? badge() : ""}</div><div class="muted">@${esc(c.handle)}</div>
       <div class="small num" style="margin-top:4px"><b>${fmt(c.followers)}</b> <span class="muted">followers</span>${c.followsMe ? ' · <span class="muted">Follows you</span>' : ""}</div></div></div>
       ${c.bio ? `<div style="white-space:pre-wrap">${esc(c.bio)}</div>` : ""}
+      <button class="btn sm soft" data-act="photoChar" data-id="${esc(c.id)}" style="align-self:flex-start">${ic("camera")} ${c.av && c.av.img ? "Change photo" : "Use a real photo"}</button>
       ${c.kind !== "news" ? `<div class="card col" style="gap:8px"><div class="row"><b class="grow">Relationship</b><span class="num" style="color:${relColor(c.rel)};font-weight:700">${Math.round(c.rel)}</span></div>${relBar(c.rel)}
         <div class="small muted">Dynamic: ${esc(c.chem || "not defined yet")}</div>
         ${canTalk ? `<div class="row wrap" style="gap:6px">${CHEMS.map(x => `<button class="chip" style="padding:5px 10px;font-size:13px" data-act="setChem" data-id="${esc(x)}" aria-pressed="${c.chem === x}">${esc(x)}</button>`).join("")}</div>` : ""}</div>` : ""}
-      ${canTalk ? `<div class="row"><button class="btn accent grow" data-act="dmFromProfile" data-id="${esc(c.id)}">Message</button><button class="btn ghost grow" data-act="actFromProfile" data-id="${esc(c.id)}">Invite to activity</button></div>` : c.kind === "news" ? "" : `<div class="notice">Not in your circle yet. Unlock them from your profile.</div>`}
+      ${canTalk ? `<div class="row"><button class="btn accent grow" data-act="dmFromProfile" data-id="${esc(c.id)}">Message</button><button class="btn ghost grow" data-act="actFromProfile" data-id="${esc(c.id)}">Invite to activity</button></div>` : c.kind === "news" ? "" : `<div class="row"><span class="grow small muted">Not in your circle.</span><button class="btn sm accent" data-act="unlock" data-id="${esc(c.id)}">Add to circle</button></div>`}
+      <div class="row wrap" style="gap:8px"><button class="btn sm ghost" data-act="charEdit" data-id="${esc(c.id)}">${ic("edit")} Edit character</button>${canTalk ? `<button class="btn sm ghost" data-act="charRemove" data-id="${esc(c.id)}">Remove from circle</button>` : ""}</div>
     </div>
     ${posts.map(postHTML).join("") || `<div class="empty small">No posts yet</div>`}
   </div>`;
+}
+
+/* ---------- real profile photos from the web ----------
+   Sources are Wikipedia article images and Wikimedia Commons: free, no key, CORS-enabled, and
+   freely licensed (real photos of actors, not film stills). Uploads are shrunk to a 192px JPEG. */
+const WIKI = "https://en.wikipedia.org/w/api.php?", COMMONS = "https://commons.wikimedia.org/w/api.php?";
+const HP_ACTORS = { hp_harry: "Daniel Radcliffe", hp_hermione: "Emma Watson", hp_ron: "Rupert Grint", hp_ginny: "Bonnie Wright", hp_twins: "James and Oliver Phelps",
+  hp_neville: "Matthew Lewis (actor)", hp_luna: "Evanna Lynch", hp_cho: "Katie Leung", hp_padma: "Afshan Azad", hp_angelina: "Tiana Benjamin", hp_draco: "Tom Felton",
+  hp_pansy: "Scarlett Byrne", hp_blaise: "Louis Cordice", hp_umbridge: "Imelda Staunton", hp_mcgonagall: "Maggie Smith", hp_snape: "Alan Rickman",
+  hp_dumbledore: "Michael Gambon", hp_hagrid: "Robbie Coltrane", hp_sirius: "Gary Oldman" };
+const wikiJSON = (base, params) => fetch(base + new URLSearchParams(Object.assign({ format: "json", origin: "*" }, params))).then(r => r.json());
+/* article title -> lead photo URL, following redirects; up to 40 titles per request */
+async function wikiThumbs(titles) {
+  const out = {};
+  for (let i = 0; i < titles.length; i += 40) {
+    const chunk = titles.slice(i, i + 40);
+    const d = await wikiJSON(WIKI, { action: "query", titles: chunk.join("|"), prop: "pageimages", piprop: "thumbnail", pithumbsize: "256", redirects: "1" });
+    const q = d.query || {}, norm = {}, red = {}, pages = {};
+    for (const x of q.normalized || []) norm[x.from] = x.to;
+    for (const x of q.redirects || []) red[x.from] = x.to;
+    for (const p of Object.values(q.pages || {})) pages[p.title] = p;
+    for (const t of chunk) { let f = norm[t] || t; f = red[f] || f; const p = pages[f]; if (p && p.thumbnail) out[t] = p.thumbnail.source; }
+  }
+  return out;
+}
+async function photoSearch(q) {
+  const [a, b] = await Promise.allSettled([
+    wikiJSON(WIKI, { action: "query", generator: "search", gsrsearch: q, gsrlimit: "6", prop: "pageimages", piprop: "thumbnail", pithumbsize: "256" }),
+    wikiJSON(COMMONS, { action: "query", generator: "search", gsrsearch: "filetype:bitmap " + q, gsrnamespace: "6", gsrlimit: "18", prop: "imageinfo", iiprop: "url", iiurlwidth: "256" })
+  ]);
+  const res = [], seen = new Set(), add = (url, label) => { if (url && !seen.has(url)) { seen.add(url); res.push({ url, label }); } };
+  const pages = v => Object.values((v && v.query && v.query.pages) || {}).sort((x, y) => x.index - y.index);
+  if (a.status === "fulfilled") for (const p of pages(a.value)) add(p.thumbnail && p.thumbnail.source, p.title);
+  if (b.status === "fulfilled") for (const p of pages(b.value)) { const ii = p.imageinfo && p.imageinfo[0]; add(ii && ii.thumburl, p.title.replace(/^File:/, "").replace(/\.\w+$/, "")); }
+  if (a.status === "rejected" && b.status === "rejected") throw { message: "Can't reach Wikipedia right now" };
+  return res;
+}
+/* the AI suggests what to search for: the actor who played the character, or a short description */
+async function aiPhotoQuery(c) {
+  const W = S.W;
+  const r = await ai(`World / fandom: ${W.fandom || W.name}. Character: ${c.name} (@${c.handle}). ${String(c.desc || c.bio || "").slice(0, 300)}
+I want a real photo to use as this character's profile picture. If the character was played by a real actor in a well-known live-action film or TV adaptation, give the actor's name exactly as their English Wikipedia article title. Otherwise give a short search phrase (3-6 words) for a fitting free stock photo of a person.
+Reply with ONLY JSON: {"actor": "name or null", "query": "search phrase"}`);
+  return (typeof r.actor === "string" && r.actor && r.actor !== "null") ? { q: r.actor, actor: r.actor } : { q: String(r.query || c.name) };
+}
+/* whole cast at once: known actors (and, for AI-made worlds, actors the AI names) -> Wikipedia photos */
+async function castPhotos(quiet) {
+  const W = S.W; if (!W || S.castBusy) return;
+  const chars = W.chars.filter(c => c.kind !== "news" && !(c.av && c.av.img));
+  if (!chars.length) return quiet || toast("Every character already has a photo");
+  S.castBusy = true; if (!quiet) { toast("Looking for photos…"); refreshSheet(); }
+  try {
+    const names = {};
+    for (const c of chars) { const a = c.actor || HP_ACTORS[c.id]; if (a) names[c.id] = a; }
+    const rest = chars.filter(c => !names[c.id]);
+    if (rest.length && !quiet && hasAI()) {
+      try {
+        const r = await ai(`World / fandom: ${W.fandom || W.name}. For each character below: if they are a canon character played by a real actor in a well-known live-action film or TV adaptation, give that actor's name exactly as their English Wikipedia article title, else null. Only answer when you are sure.
+${rest.map(c => `@${c.handle}: ${c.name}`).join("\n")}
+Reply with ONLY JSON like {"@handle": "Actor Name" or null}`);
+        for (const c of rest) { const v = r["@" + c.handle] || r[c.handle]; if (typeof v === "string" && v.trim() && v !== "null") names[c.id] = v.trim(); }
+      } catch (e) { failed(e); }
+    }
+    const thumbs = await wikiThumbs([...new Set(Object.values(names))]);
+    let n = 0;
+    for (const c of S.W.chars) { const u = names[c.id] && thumbs[names[c.id]]; if (u && !(c.av && c.av.img)) { c.av = Object.assign({}, c.av, { img: u }); c.actor = names[c.id]; n++; } }
+    if (n) saveWorld();
+    if (!quiet) toast(n ? `Added real photos for ${n} of ${chars.length} characters` : "Couldn't find photos for this cast. Try one by one from each profile.");
+  } catch (e) { if (!quiet) toast("Couldn't reach Wikipedia. Check your connection and try again."); }
+  S.castBusy = false; render(); refreshSheet();
+}
+function photoTarget() {
+  const t = S.pp && S.pp.target; if (!t || !S.W) return null;
+  return t.kind === "me" ? { name: S.W.me.name, av: (S.editMe && S.editMe.av) || S.W.me.av, key: "me" } : (c => c && { name: c.name, av: c.av, key: c.id, c })(S.W.chars.find(x => x.id === t.id));
+}
+function openPhotoPicker(target) {
+  const c = target.kind === "char" ? S.W.chars.find(x => x.id === target.id) : null;
+  S.pp = { target, q: c ? (c.actor || HP_ACTORS[c.id] || c.name) : "", results: null, busy: false, url: "", err: "" };
+  openSheet(sheetPhoto);
+  if (S.pp.q && c) ppSearch();
+}
+async function ppSearch() {
+  const pp = S.pp; if (!pp.q.trim()) return;
+  const n = pp.n = (pp.n || 0) + 1;   // only the latest search may fill the grid
+  pp.busy = true; pp.err = ""; refreshSheet();
+  let res = [], err = "";
+  try { res = await photoSearch(pp.q.trim()); } catch (e) { err = e.message || "Search failed"; }
+  if (S.pp !== pp || pp.n !== n) return;
+  pp.results = res; pp.err = err; pp.busy = false; refreshSheet();
+}
+function setPhoto(url) {
+  const t = S.pp.target;
+  if (t.kind === "me") {
+    S.W.me.av = Object.assign({}, S.W.me.av, { img: url || undefined });
+    if (S.editMe) S.editMe.av = Object.assign({}, S.editMe.av, { img: url || undefined });
+  } else {
+    const c = S.W.chars.find(x => x.id === t.id); if (!c) return;
+    c.av = Object.assign({}, c.av, { img: url || undefined });
+  }
+  saveWorld(); render();
+  if (t.kind === "me") openSheet(sheetEditMe); else { S.charView = t.id; openSheet(sheetChar); }
+  toast(url ? "Profile photo updated" : "Back to the illustrated avatar");
+}
+function shrinkImage(file) {
+  return new Promise((res, rej) => {
+    const fr = new FileReader();
+    fr.onerror = rej;
+    fr.onload = () => {
+      const im = new Image();
+      im.onerror = rej;
+      im.onload = () => {
+        const S2 = 192, cv = document.createElement("canvas"), s = Math.min(im.width, im.height);
+        cv.width = cv.height = S2;
+        cv.getContext("2d").drawImage(im, (im.width - s) / 2, (im.height - s) / 2, s, s, 0, 0, S2, S2);
+        res(cv.toDataURL("image/jpeg", 0.82));
+      };
+      im.src = fr.result;
+    };
+    fr.readAsDataURL(file);
+  });
+}
+function sheetPhoto() {
+  const pp = S.pp, T = photoTarget(); if (!T) return head("");
+  return head("Profile photo") + `<div class="sh-body"><div class="col gut" style="gap:14px">
+    <div class="row">${avatar(T.av, T.key, "lg")}<div class="grow"><b>${esc(T.name)}</b><div class="small muted">Search the web for a real photo, paste a link, or upload your own.</div></div></div>
+    <div class="field"><label for="ppQ">Search Wikipedia &amp; Wikimedia Commons</label>
+      <div class="row"><input class="in" id="ppQ" data-pp="q" value="${esc(pp.q)}" placeholder="e.g. an actor's name"><button class="btn sm accent" data-act="ppSearch" ${pp.busy ? "disabled" : ""}>Search</button></div>
+      ${T.c ? `<button class="linkbtn" data-act="ppAI" ${pp.busy ? "disabled" : ""}>✨ Let the AI find who to search for</button>` : ""}</div>
+    ${pp.busy ? `<div class="thinking"><span class="spin"></span>Searching…</div>` : ""}
+    ${pp.err ? `<div class="err">${esc(pp.err)}</div>` : ""}
+    ${pp.results ? (pp.results.length ? `<div class="photogrid">${pp.results.map(r => `<button data-act="ppPick" data-url="${esc(r.url)}" title="${esc(r.label)}"><img src="${esc(r.url)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.parentElement.remove()"><span class="ell">${esc(r.label)}</span></button>`).join("")}</div>
+      <div class="tiny muted">Photos from Wikipedia and Wikimedia Commons (freely licensed). Tap one to use it.</div>` : `<div class="small muted">No photos found. Try another name or spelling.</div>`) : ""}
+    <div class="field"><label for="ppUrl">Or paste an image link</label><div class="row"><input class="in" id="ppUrl" data-pp="url" value="${esc(pp.url)}" placeholder="https://…jpg" inputmode="url"><button class="btn sm soft" data-act="ppUrl">Use</button></div></div>
+    <div class="row wrap"><label class="btn sm soft" style="cursor:pointer">📁 Upload from device<input type="file" id="ppFile" accept="image/*" hidden></label>
+      ${T.av && T.av.img ? `<button class="btn sm ghost" data-act="ppReset">Remove photo</button>` : ""}</div>
+  </div></div>`;
+}
+
+/* ---------- random account profile ---------- */
+function npcActivity(W, h) {
+  const k = String(h).toLowerCase(), out = [];
+  for (const p of W.posts) {
+    if (p.a && typeof p.a === "object" && String(p.a.h).toLowerCase() === k) out.push({ kind: "post", p });
+    for (const r of p.replies) if (r.a && typeof r.a === "object" && String(r.a.h).toLowerCase() === k) out.push({ kind: "reply", p, r });
+  }
+  return out;
+}
+function sheetNPC() {
+  const W = S.W, h = S.npcView, n = (W.npcs || {})[String(h).toLowerCase()];
+  const acts = npcActivity(W, h), first = acts[0];
+  const A = n ? npcAuthor(n) : first ? (first.kind === "post" ? first.p.a : first.r.a) : { h, n: h };
+  const info = authorInfo(W, A), bio = n && n.bio;
+  const followers = 40 + hashN(h) % 3800;
+  return head(esc(info.name)) + `<div class="sh-body">
+    <div class="gut col" style="gap:10px;padding-bottom:14px">
+      <div class="row">${avatar(info.av, info.key, "lg")}<div class="grow"><h2 style="font-size:20px">${esc(info.name)}</h2><div class="muted">@${esc(info.handle)}</div>
+        <div class="small num" style="margin-top:4px"><b>${fmt(followers)}</b> <span class="muted">followers</span>${n ? ` · <span class="muted">around since day ${n.first || 1}</span>` : ""}</div></div></div>
+      ${bio ? `<div style="white-space:pre-wrap">${esc(bio)}</div>` : ""}
+      <div class="row"><button class="btn accent grow" data-act="npcFollow" data-id="${esc(info.handle)}">Follow &amp; message</button></div>
+      <div class="tiny muted">Following adds them to your circle so you can DM them, invite them to activities and see them more often.</div>
+    </div>
+    ${acts.slice(0, 12).map(x => x.kind === "post" ? postHTML(x.p) : `<div class="post gut" data-act="openPost" data-id="${esc(x.p.id)}"><div style="width:44px"></div><div class="grow"><div class="small muted">Replied to @${esc(authorInfo(W, x.p.a).handle)}</div><div class="text">${esc(x.r.t)}</div></div></div>`).join("") || `<div class="empty small">Nothing posted yet</div>`}
+  </div>`;
+}
+
+/* ---------- add any character (canon or new) by name ---------- */
+function sheetAddChar() {
+  const W = S.W, f = S.addChar || (S.addChar = { q: "", busy: false });
+  const sugg = W.chars.filter(c => !c.unlocked && c.kind !== "news");
+  return head("Add a character") + `<div class="sh-body"><div class="col gut" style="gap:14px">
+    <div class="small muted">Bring anyone into ${esc(W.name)}: type a canon character from ${esc(W.fandom || "this world")} and the AI recreates them faithfully, or describe someone new.</div>
+    <div class="field"><label for="acQ">Who?</label><input class="in" id="acQ" data-acq="q" maxlength="300" value="${esc(f.q)}" placeholder="e.g. Fred Weasley, or a shy Hufflepuff who brews potions at night"></div>
+    <button class="btn accent" data-act="addCharGo" ${f.busy ? "disabled" : ""}>${f.busy ? '<span class="spin"></span> Creating…' : "Add to my circle"}</button>
+    ${sugg.length ? `<div class="field"><label>Or add someone already in this world</label><div class="col" style="gap:8px">${sugg.map(c => `<div class="row">${avatar(c.av, c.id, "sm")}<div class="grow"><b class="ell">${esc(c.name)}</b><div class="tiny muted ell">${esc(c.bio || "")}</div></div><button class="btn sm soft" data-act="unlock" data-id="${esc(c.id)}">Add</button></div>`).join("")}</div></div>` : ""}
+    ${S.G.library.length ? `<button class="btn ghost sm" data-act="addCustom" style="align-self:flex-start">${ic("plus")} Add one of my own characters</button>` : ""}
+  </div></div>`;
+}
+async function addCharAI() {
+  const W = S.W, f = S.addChar, q = String(f.q || "").trim();
+  if (!q) return toast("Type a name or describe someone");
+  if (!hasAI()) return openApi("Add a free AI key (OpenRouter, Groq or Gemini) first.");
+  if (guard()) return;
+  f.busy = true; refreshSheet();
+  try {
+    const r = await ai(`${ctx(W, { posts: 3 })}
+
+The player wants to add this person to the world and to their circle: "${q}".
+If it names an existing character from the world's canon or fandom, recreate them faithfully: canon personality, voice, role, and only what they would know at this point of the story. Otherwise invent a fitting new character for this world.
+Reply with ONLY JSON: {"name":"","handle":"lowercase_handle_no_at","bio":"public bio, max 80 chars","desc":"personality, voice, posting style, secrets, how they see the player: 3-4 sentences","look":"appearance in under 20 words, no names","pic":"profile picture as a 2-4 word photo-search phrase naming one real object, animal or place that fits them (e.g. 'silver ring', 'snowy owl'); never a person or a name","emoji":"one emoji","followers":0,"greeting":"the first DM they send the player"}`);
+    if (!r.name) throw { code: "badjson" };
+    snapshot();
+    let c = W.chars.find(x => x.name.toLowerCase() === String(r.name).toLowerCase()) || findCharByHandle(W, r.handle);
+    if (!c) {
+      c = { id: uid("c"), name: String(r.name).slice(0, 40), handle: cleanHandle(r.handle || r.name).toLowerCase() || "user" + rnd(100, 999), bio: String(r.bio || "").slice(0, 160), desc: String(r.desc || "").slice(0, 1500), look: String(r.look || "").slice(0, 200),
+        av: { e: String(r.emoji || "🙂").slice(0, 4), c: hashN(r.name) % COLORS.length, st: AV_STYLES[hashN(r.name) % AV_STYLES.length], sd: uid(), pic: String(r.pic || "").slice(0, 200) || undefined },
+        followers: Math.max(10, Math.round(num(r.followers)) || rnd(300, 20000)), kind: "char", rel: 10, chem: "" };
+      W.chars.push(c);
+    } else if (r.pic && !(c.av && c.av.pic && !c.av.picAuto)) c.av = Object.assign({}, c.av, { pic: String(r.pic).slice(0, 200), picAuto: false });
+    const wasIn = c.unlocked;
+    c.unlocked = c.followsMe = c.iFollow = true;
+    if (!wasIn && r.greeting) pushDM(c.id, "them", String(r.greeting));
+    notify("follow", `${c.name} followed you`, { dm: c.id });
+    remember(`${c.name} joined ${W.me.name}'s circle`);
+    S.addChar = null; checkAch(); saveWorld();
+    S.charView = c.id; openSheet(sheetChar); render();
+    toast(wasIn ? `${c.name} is already in your circle` : `${c.name} followed you`);
+  } catch (e) { f.busy = false; failed(e); refreshSheet(); }
 }
 
 /* ---------- my characters library ---------- */
@@ -2027,6 +2791,7 @@ async function postStory() {
   const W = S.W, st = S.storyForm; if (!st.t.trim() && !st.img.trim()) return toast("Write something or describe a photo first");
   if (guard()) return;
   const text = st.t.trim(), img = mkImg(st.img);
+  snapshot();
   W.stories.push({ id: uid("s"), a: "me", t: text, img, bg: st.bg, day: W.day, ts: Date.now(), seen: true });
   S.storyForm = null; closeLayer(); setBusy("People are viewing your story…"); render();
   try {
@@ -2040,7 +2805,7 @@ viewers: a realistic count for ${W.me.followers} followers. reactions: 0-2.`);
     if (r.memory) remember(r.memory);
     toast(`${fmt(num(r.viewers) || rnd(20, 200))} people viewed your story`);
     addXP(10); saveWorld();
-  } catch (e) { saveWorld(); failed(e); }
+  } catch (e) { saveWorld(); failed(e); }   // the story itself is posted; keep its undo point
   finally { setBusy(null); render(); }
 }
 
@@ -2100,7 +2865,7 @@ function sheetActivity() {
 }
 /* ================= actions (click delegation) ================= */
 const val = id => { const el = document.getElementById(id); return el ? el.value : ""; };
-function keepEditMe() { const e = S.editMe; e.name = val("emName"); e.handle = val("emHandle"); e.bio = val("emBio"); e.look = val("emLook"); }
+function keepEditMe() { const e = S.editMe; e.name = val("emName"); e.handle = val("emHandle"); e.bio = val("emBio"); e.look = val("emLook"); e.pic = val("emPic"); }
 function avTarget(pfx) { return pfx === "cw" ? S.cw.av : pfx === "em" ? S.editMe.av : S.libForm.av; }
 function avEdit(pfx, fn) { if (pfx === "em") keepEditMe(); fn(avTarget(pfx)); refreshSheet(); }
 const ACT = {
@@ -2113,12 +2878,13 @@ const ACT = {
     if (!w) { toast("Couldn't find this world's save"); S.G.worlds = S.G.worlds.filter(x => x.id !== id); saveMeta(); return render(); }
     normalizeWorld(w); S.W = w; S.snaps = []; S.view = { screen: "world", tab: "feed", post: null, dm: null }; checkAch(); render();
   },
-  newWorld() { if (!S.G.apiKey) return openApi("Add your OpenRouter key to build a world."); startCreate(); },
+  newWorld() { if (!hasAI()) return openApi("Add a free AI key (OpenRouter, Groq or Gemini) to build a world."); startCreate(); },
   openPost(el) { if (S.sheet) closeLayer(); S.view.dm = null; S.view.post = el.dataset.id; S.view.replyDraft = ""; render(); },
   profileOf(el, ev) {
     const a = el.dataset.a;
     if (!a) { const up = el.parentElement && el.parentElement.closest("[data-act]"); if (up) run(up, ev); return; }
     if (a === "me") { closeLayer(); S.view.post = null; S.view.dm = null; S.view.tab = "profile"; return render(); }
+    if (a.startsWith("rand:")) { S.npcView = a.slice(5); return openSheet(sheetNPC); }
     S.charView = a; openSheet(sheetChar);
   },
   notif(el) {
@@ -2130,7 +2896,7 @@ const ACT = {
   post() {
     const t = val("composer"), ph = S.view.photoOpen ? val("photoIn").trim() : "";
     if (!t.trim() && !ph) return toast("Write something first");
-    if (!S.G.apiKey) return openApi("Add your OpenRouter key to start posting.");
+    if (!hasAI()) return openApi("Add a free AI key (OpenRouter, Groq or Gemini) to start posting.");
     if (guard()) return;
     S.view.draft = ""; S.view.photoDraft = ""; S.view.photoOpen = false; makePost(t, ph);
   },
@@ -2143,25 +2909,25 @@ const ACT = {
     saveWorld(); render();
   },
   rt(el) { const p = S.W.posts.find(x => x.id === el.dataset.id); if (!p) return; p.rted = !p.rted; p.rts += p.rted ? 1 : -1; saveWorld(); render(); },
-  reply(el) { const t = val("replyIn"); if (!t.trim()) return; if (!S.G.apiKey) return openApi("Add your OpenRouter key first."); if (guard()) return; S.view.replyDraft = ""; makeReply(el.dataset.id, t); },
+  reply(el) { const t = val("replyIn"); if (!t.trim()) return; if (!hasAI()) return openApi("Add a free AI key (OpenRouter, Groq or Gemini) first."); if (guard()) return; S.view.replyDraft = ""; makeReply(el.dataset.id, t); },
   focusReply() { $("#replyIn")?.focus(); },
   rewind() { rewind(); },
   // stories
   story(el) { closeLayer(); openStories(el.dataset.id); },
   myStory(el, ev) { ev.stopPropagation(); S.storyForm = S.storyForm || { bg: 0, t: "", img: "" }; openSheet(sheetMyStory); },
   sfBg(el) { S.storyForm.bg = +el.dataset.id; refreshSheet(); },
-  sfPost() { if (!S.G.apiKey) return openApi("Add your OpenRouter key first."); postStory(); },
+  sfPost() { if (!hasAI()) return openApi("Add a free AI key (OpenRouter, Groq or Gemini) first."); postStory(); },
   svClose() { S.sv = null; layer.innerHTML = ""; saveWorld(); render(); },
   svPrev() { svStep(-1); }, svNext() { svStep(1); },
   svSend(el) { const t = val("svReply"); if (!t.trim() || guard()) return; const s = S.sv.byA[S.sv.order[S.sv.ai]][S.sv.si]; S.sv = null; layer.innerHTML = ""; pushDM(el.dataset.id, "sys", `You replied to their story: “${String(s.t || (s.img && s.img.d) || "").slice(0, 60)}”`); S.view.post = null; S.view.dm = el.dataset.id; S.stickBottom = true; render(); sendDM(el.dataset.id, t); },
   // explore
-  nextDay() { if (!S.G.apiKey) return openApi("Add your OpenRouter key first."); nextDay(); },
+  nextDay() { if (!hasAI()) return openApi("Add a free AI key (OpenRouter, Groq or Gemini) first."); nextDay(); },
   useTrend(el) { S.view.tab = "feed"; S.view.draft = (S.view.draft ? S.view.draft + " " : "") + el.dataset.id + " "; render(); $("#composer")?.focus(); },
-  eventChoice(el) { if (!S.G.apiKey) return openApi("Add your OpenRouter key first."); resolveEvent(el.dataset.id, el.dataset.choice); },
+  eventChoice(el) { if (!hasAI()) return openApi("Add a free AI key (OpenRouter, Groq or Gemini) first."); resolveEvent(el.dataset.id, el.dataset.choice); },
   eventCustom(el) { const t = val("ev_" + el.dataset.id); if (!t.trim()) return toast("Write your move first"); resolveEvent(el.dataset.id, t); },
   actChar(el) { S.view.actChar = el.dataset.id; render(); },
   actIdea(el) { S.view.actDraft = el.dataset.id; render(); },
-  startAct() { const t = val("actIn") || S.view.actDraft; if (!S.view.actChar) return toast("Pick a character first"); if (!String(t).trim()) return toast("Pick or type an activity"); if (!S.G.apiKey) return openApi("Add your OpenRouter key first."); if (guard()) return; S.view.actDraft = ""; startActivity(S.view.actChar, t); },
+  startAct() { const t = val("actIn") || S.view.actDraft; if (!S.view.actChar) return toast("Pick a character first"); if (!String(t).trim()) return toast("Pick or type an activity"); if (!hasAI()) return openApi("Add a free AI key (OpenRouter, Groq or Gemini) first."); if (guard()) return; S.view.actDraft = ""; startActivity(S.view.actChar, t); },
   resumeAct() { openActivity(); },
   acceptInvite(el) { const i = S.W.invites.find(x => x.id === el.dataset.id); if (i) startActivity(i.cid, i.act, i.id); },
   declineInvite(el) { S.W.invites = S.W.invites.filter(x => x.id !== el.dataset.id); saveWorld(); render(); },
@@ -2171,20 +2937,28 @@ const ACT = {
   actClose() { S.W.act = null; saveWorld(); closeLayer(); render(); },
   // DMs
   openDM(el) { S.view.dm = el.dataset.id; S.view.dmDraft = ""; S.stickBottom = true; render(); },
-  sendDM(el) { const t = val("dmIn"); if (!t.trim()) return; if (!S.G.apiKey) return openApi("Add your OpenRouter key first."); if (guard()) return; S.view.dmDraft = ""; S.stickBottom = true; sendDM(el.dataset.id, t); },
+  sendDM(el) { const t = val("dmIn"); if (!t.trim()) return; if (!hasAI()) return openApi("Add a free AI key (OpenRouter, Groq or Gemini) first."); if (guard()) return; S.view.dmDraft = ""; S.stickBottom = true; sendDM(el.dataset.id, t); },
   dmFromProfile(el) { closeLayer(); S.view.post = null; S.view.dm = el.dataset.id; S.stickBottom = true; render(); },
   actFromProfile(el) { closeLayer(); S.view.post = null; S.view.dm = null; S.view.tab = "explore"; S.view.actChar = el.dataset.id; render(); $("#actIn")?.focus(); },
-  setChem(el) { const c = S.W.chars.find(x => x.id === S.charView); if (!c) return; c.chem = el.dataset.id; pushDM(c.id, "sys", `You and ${c.name} are now: ${c.chem}`); remember(`${S.W.me.name} and ${c.name}'s relationship became "${c.chem}"`); saveWorld(); refreshSheet(); },
+  setChem(el) { const c = S.W.chars.find(x => x.id === S.charView); if (!c) return; snapshot(); c.chem = el.dataset.id; pushDM(c.id, "sys", `You and ${c.name} are now: ${c.chem}`); remember(`${S.W.me.name} and ${c.name}'s relationship became "${c.chem}"`); saveWorld(); refreshSheet(); },
   // profile
   upSkill(el) { upgradeSkill(+el.dataset.id); },
   unlock(el) { unlockChar(el.dataset.id); },
-  addCustom() { if (S.W.me.unlocks < 1) return toast("Clear a milestone (or buy an unlock) to add a character"); S.libAdd = true; S.libForm = null; openSheet(sheetLibrary); },
+  addCustom() { S.libAdd = true; S.libForm = null; openSheet(sheetLibrary); },
+  addChar() { S.addChar = { q: "", busy: false }; openSheet(sheetAddChar); },
+  addCharGo() { addCharAI(); },
+  npcFollow(el) {
+    const W = S.W; snapshot(); const c = promoteNPC(W, el.dataset.id, null, {});
+    if (!(W.dms[c.id] || []).length) pushDM(c.id, "sys", `You followed @${c.handle}`);
+    remember(`${W.me.name} followed @${c.handle}`); saveWorld();
+    closeLayer(); S.view.post = null; S.view.dm = c.id; S.stickBottom = true; render();
+  },
   libAddToWorld(el) { S.libAdd = false; addCustomToWorld(el.dataset.id); },
   editMe() { S.editMe = null; openSheet(sheetEditMe); },
   emShuffle() { avEdit("em", a => a.sd = uid()); }, emStyle(el) { avEdit("em", a => a.st = el.dataset.id); }, emColor(el) { avEdit("em", a => a.c = +el.dataset.id); },
-  emSave() { keepEditMe(); const me = S.W.me, e = S.editMe; me.name = e.name.trim() || me.name; me.handle = e.handle.replace(/^@/, "").replace(/\s+/g, "") || me.handle; me.bio = e.bio; me.look = e.look; me.av = e.av; saveWorld(); closeLayer(); render(); toast("Profile saved"); },
+  emSave() { keepEditMe(); snapshot(); const me = S.W.me, e = S.editMe; me.name = e.name.trim() || me.name; me.handle = e.handle.replace(/^@/, "").replace(/\s+/g, "") || me.handle; me.bio = e.bio; me.look = e.look; me.av = e.av; if (String(e.pic || "").trim()) Object.assign(me.av, { pic: e.pic.trim(), picAuto: false }); saveWorld(); closeLayer(); render(); toast("Profile saved"); },
   editGoal() { openSheet(sheetGoal); },
-  goalSave() { S.W.me.goal = val("goalIn").trim(); remember(`${S.W.me.name} set a new goal: ${S.W.me.goal}`); saveWorld(); closeLayer(); render(); },
+  goalSave() { snapshot(); S.W.me.goal = val("goalIn").trim(); remember(`${S.W.me.name} set a new goal: ${S.W.me.goal}`); saveWorld(); closeLayer(); render(); },
   worldSettings() { S.wsState = {}; openSheet(sheetWorldSettings); },
   wsSave() { const W = S.W; W.name = val("wsName").trim() || W.name; W.desc = val("wsDesc"); W.madness = +val("wsMad") || W.madness; W.muteNews = $("#wsMute").checked; W.imgStyle = val("wsImg"); saveWorld(); closeLayer(); render(); toast("World settings saved"); },
   wsAskDelete() { S.wsState.confirm = true; refreshSheet(); }, wsCancel() { S.wsState.confirm = false; refreshSheet(); },
@@ -2193,17 +2967,27 @@ const ACT = {
   shop() { openSheet(sheetShop); },
   buyViral() { buy(25, () => S.W.me.boosts.viral++, "Got a viral boost"); },
   buyClout() { buy(20, () => S.W.me.boosts.clout++, "Got a clout boost"); },
-  buyUnlock() { buy(60, () => S.W.me.unlocks++, "Got an extra unlock. Use it on your profile"); },
   // API
   api() { openApi(""); },
-  async keySave() { const k = val("keyIn").trim(); if (!k) return toast("Paste your key first"); S.G.apiKey = k; saveMeta(); S.apiMsg = ""; S.key = null; refreshSheet(); await refreshKey(); if (S.key && !S.key.error) toast("Key saved and working"); render(); },
+  async keySave() { const k = val("keyIn").trim(); if (!k) return toast("Paste your key first"); S.G.apiKey = k; delete COOL.openrouter; delete BADKEY.openrouter; LS.set("mc_cool", COOL); saveMeta(); S.apiMsg = ""; S.key = null; refreshSheet(); await refreshKey(); if (S.key && !S.key.error) toast("Key saved and working"); render(); },
   keyRefresh() { S.key = null; refreshSheet(); refreshKey(); },
   keyRemove() { S.G.apiKey = ""; S.key = null; saveMeta(); refreshSheet(); render(); toast("Key removed from this browser"); },
+  async provKeySave(el) {
+    const p = el.dataset.p, P = PROV[p], k = val(p + "KeyIn").trim(); if (!k) return toast("Paste your key first");
+    S.G[P.keyF] = k; delete COOL[p]; delete BADKEY[p]; LS.set("mc_cool", COOL); saveMeta(); S.apiMsg = "";
+    S.pmodels = S.pmodels || {}; S.pmodels[p] = null; refreshSheet();
+    await loadProvModels(p); refreshSheet(); render();
+    toast(S.pmodels[p] && S.pmodels[p].length ? `${P.name} key saved and working` : `${P.name} key saved, but it couldn't be checked. Make sure it's right.`);
+  },
+  provKeyRemove(el) { const p = el.dataset.p; S.G[PROV[p].keyF] = ""; if (S.pmodels) delete S.pmodels[p]; saveMeta(); refreshSheet(); render(); toast("Key removed from this browser"); },
+  provModel(el) { if (el.value) { S.G[PROV[el.dataset.p].modelF] = el.value; saveMeta(); refreshSheet(); toast(`${PROV[el.dataset.p].name} model: ${el.value}`); } },
+  provFirst(el) { const p = el.dataset.id; S.G.aiOrder = [p, ...aiOrder().filter(x => x !== p)]; saveMeta(); refreshSheet(); renderMeter(); },
   modelPick(el) { if (el.value) { S.G.model = el.value; S.G.modelAuto = false; saveMeta(); refreshSheet(); renderMeter(); toast("Model set: " + el.value); } },
   modelCustom() { const m = val("modelCustom").trim(); if (!m) return; S.G.model = m; S.G.modelAuto = false; saveMeta(); refreshSheet(); renderMeter(); toast("Model set: " + m); },
   async modelsReload() { S.models = null; refreshSheet(); await loadModels(); refreshSheet(); },
   // settings
   settings() { S.setState = {}; openSheet(sheetSettings); },
+  setAvMode(el) { S.G.avMode = el.dataset.id; saveMeta(); refreshSheet(); render(); },
   setTheme(el) { S.G.theme = el.dataset.id; applyTheme(); saveMeta(); refreshSheet(); render(); },
   setImg(el) { S.G.imgMode = el.dataset.id; saveMeta(); refreshSheet(); render(); if (S.G.imgMode === "ai") pumpImgs(); },
   library() { S.libAdd = false; S.libForm = null; openSheet(sheetLibrary); },
@@ -2222,7 +3006,7 @@ const ACT = {
   },
   exportSave() {
     flushWorld();
-    const meta = JSON.parse(JSON.stringify(S.G)); meta.apiKey = "";
+    const meta = JSON.parse(JSON.stringify(S.G)); for (const k of KEY_FIELDS) meta[k] = "";
     const out = { app: "main-character", meta, worlds: {} };
     for (const w of S.G.worlds) { const d = LS.get("mc_w_" + w.id); if (d) out.worlds[w.id] = d; }
     S.setState.export = JSON.stringify(out); S.setState.importing = false; refreshSheet();
@@ -2239,7 +3023,8 @@ const ACT = {
       clearTimeout(tWorld);
       const keep = new Set(o.meta.worlds.map(w => w && w.id));
       for (const w of S.G.worlds) if (!keep.has(w.id)) { LS.del("mc_w_" + w.id); cloudDirty("del", w.id); }
-      S.G = Object.assign(newGlobal(), o.meta); S.G.apiKey = key || o.meta.apiKey || ""; S.G.model = S.G.model || model;
+      const keys = localKeys(S.G);
+      S.G = Object.assign(newGlobal(), o.meta); Object.assign(S.G, keys); S.G.apiKey = key || o.meta.apiKey || ""; S.G.model = S.G.model || model;
       for (const id in (o.worlds || {})) { const w = normalizeWorld(o.worlds[id]); w.savedAt = Date.now(); LS.set("mc_w_" + id, w); cloudDirty("world", id); }
       saveMeta(); closeLayer(); S.W = null; S.view = { screen: "home", tab: "feed" }; render(); toast("Save imported");
     } catch { toast("That save text isn't valid. Copy the whole export again."); }
@@ -2248,12 +3033,15 @@ const ACT = {
   doReset() {
     if (guard()) return;
     for (const w of S.G.worlds) { LS.del("mc_w_" + w.id); cloudDirty("del", w.id); }
-    const key = S.G.apiKey, model = S.G.model, theme = S.G.theme, owner = S.G.owner;
-    S.G = newGlobal(); Object.assign(S.G, { apiKey: key, model, theme, owner, streak: { n: 1, last: todayKey() } });
+    const keys = localKeys(S.G), model = S.G.model, theme = S.G.theme, owner = S.G.owner, ai = { groqModel: S.G.groqModel, geminiModel: S.G.geminiModel, aiOrder: S.G.aiOrder };
+    S.G = newGlobal(); Object.assign(S.G, keys, ai, { model, theme, owner, streak: { n: 1, last: todayKey() } });
     seedSample(); cloudDirty("world", "w_sample"); saveMeta(); closeLayer(); S.W = null; S.view = { screen: "home", tab: "feed" }; S.snaps = []; render(); toast("Fresh start");
   },
   // create world
-  cwPreset(el) { S.cw.preset = +el.dataset.id; refreshSheet(); },
+  cwPreset(el) { S.cw.preset = +el.dataset.id; if ((S.cw.preset === HP_PRESET || S.cw.preset === WW_PRESET) && S.cw.imgStyle === "photo") S.cw.imgStyle = "art"; refreshSheet(); },
+  cwEra(el) { const old = WW_ERAS[S.cw.era] || WW_ERAS.custom; if (!S.cw.place || S.cw.place === old.place) S.cw.place = (WW_ERAS[el.dataset.id] || WW_ERAS.custom).place; S.cw.era = el.dataset.id; refreshSheet(); },
+  cwPlace(el) { S.cw.place = el.dataset.id; refreshSheet(); },
+  cwHouse(el) { S.cw.house = el.dataset.id; refreshSheet(); },
   cwLib(el) { const a = S.cw.libPick, id = el.dataset.id; S.cw.libPick = a.includes(id) ? a.filter(x => x !== id) : [...a, id]; refreshSheet(); },
   cwImg(el) { S.cw.imgStyle = el.dataset.id; refreshSheet(); },
   cwNext() { if (S.cw.preset === -1 && !S.cw.custom.trim()) return toast("Describe the world or fandom first"); S.cw.step = 2; refreshSheet(); },
@@ -2262,9 +3050,58 @@ const ACT = {
   cwVibe(el) { S.cw.vibe = el.dataset.id; refreshSheet(); },
   cwBioAI() { cwBioAI(); },
   cwBioPick(el) { S.cw.bio = S.cw.bios[+el.dataset.id] || S.cw.bio; refreshSheet(); },
-  cwGen() { cwGenerate(); },
+  cwGen() { S.cw.preset === HP_PRESET ? cwHogwarts() : S.cw.preset === WW_PRESET ? cwWizarding() : cwGenerate(); },
+  // story setup & characters
+  setup() { if (!S.W || !S.W.sandbox) return; S.setup = Object.assign({}, S.W.sandbox); openSheet(sheetSetup); },
+  suEra(el) {
+    // defaults follow the era; anything the player typed themselves is kept
+    const f = S.setup, old = WW_ERAS[f.era] || WW_ERAS.custom, E = WW_ERAS[el.dataset.id] || WW_ERAS.custom;
+    if (!f.role || f.role === old.role) f.role = E.role;
+    if (!f.place || f.place === old.place) f.place = E.place;
+    f.era = el.dataset.id; refreshSheet();
+  },
+  suPlace(el) { S.setup.place = el.dataset.id; refreshSheet(); },
+  suAddCast(el) {
+    const W = S.W, E = WW_ERAS[S.setup.era] || WW_ERAS.custom, x = E.cast.find(y => y[1] === el.dataset.id); if (!x) return;
+    snapshot();
+    let c = findCharByHandle(W, x[1]); if (!c) { c = wwChar(x, false); W.chars.push(c); }
+    c.unlocked = c.followsMe = c.iFollow = true; remember(`${c.name} joined ${W.me.name}'s circle`); notify("follow", `${c.name} followed you`);
+    saveWorld(); refreshSheet(); render(); toast(`${c.name} followed you`);
+  },
+  suSave(el) { if (el.dataset.id === "chapter" && guard()) return; saveSetup(el.dataset.id === "chapter"); },
+  charRemove(el) {
+    const c = S.W.chars.find(x => x.id === el.dataset.id); if (!c) return;
+    snapshot();
+    c.unlocked = c.followsMe = c.iFollow = false; remember(`${c.name} left ${S.W.me.name}'s circle`);
+    saveWorld(); refreshSheet(); render(); toast(`${c.name} left your circle (add them back any time)`);
+  },
+  charEdit(el) { const c = S.W.chars.find(x => x.id === el.dataset.id); if (!c) return; S.charView = c.id; S.editChar = { name: c.name, handle: c.handle, bio: c.bio || "", desc: c.desc || "", pic: (c.av && !c.av.picAuto && c.av.pic) || "" }; openSheet(sheetEditChar); },
+  ecSave() {
+    const W = S.W, c = W.chars.find(x => x.id === S.charView), f = S.editChar; if (!c || !f) return;
+    const h = cleanHandle(f.handle); if (h && h.toLowerCase() !== c.handle.toLowerCase() && findCharByHandle(W, h)) return toast("Someone already uses that @handle");
+    snapshot();
+    c.name = String(f.name).trim() || c.name; c.handle = h || c.handle; c.bio = String(f.bio).trim(); c.desc = String(f.desc).trim();
+    if (String(f.pic).trim()) c.av = Object.assign({}, c.av, { pic: f.pic.trim(), picAuto: false });
+    remember(`${c.name}'s character was rewritten: ${c.desc.slice(0, 120)}`);
+    saveWorld(); S.editChar = null; openSheet(sheetChar); render(); toast("Character updated");
+  },
   cwPick(el) { S.cw.pick = +el.dataset.id; refreshSheet(); },
   cwStart() { cwStart(); },
+  // real profile photos
+  photoChar(el) { openPhotoPicker({ kind: "char", id: el.dataset.id }); },
+  photoMe() { keepEditMe(); openPhotoPicker({ kind: "me" }); },
+  ppSearch() { ppSearch(); },
+  async ppAI() {
+    const T = photoTarget(); if (!T || !T.c) return;
+    if (!hasAI()) return openApi("Add a free AI key so the AI can help search.");
+    S.pp.busy = true; refreshSheet();
+    try { const r = await aiPhotoQuery(T.c); S.pp.q = r.q; if (r.actor) T.c.actor = r.actor; } catch (e) { failed(e); }
+    S.pp.busy = false; ppSearch();
+  },
+  ppPick(el) { setPhoto(el.dataset.url); },
+  ppUrl() { const u = String(S.pp.url || "").trim(); if (!/^https:\/\/\S+$/i.test(u)) { S.pp.err = "Paste a full https:// image link."; return refreshSheet(); } setPhoto(u); },
+  ppReset() { setPhoto(null); },
+  castPhotos() { castPhotos(false); },
   // account & cloud save
   account() { S.acct = { mode: "in" }; openSheet(sheetAccount); },
   acMode(el) { const a = S.acct; a.mode = el.dataset.id; a.err = a.ok = ""; refreshSheet(); },
@@ -2304,7 +3141,7 @@ const ACT = {
   close() { closeLayer(); render(); },
   scrim(el, ev) { if (ev.target === el && !(S.sheet && S.sheet.fn === sheetCreate && S.cw && S.cw.step === 3)) { closeLayer(); render(); } }
 };
-function buy(cost, fn, msg) { if (S.G.gems < cost) return toast("Not enough gems"); S.G.gems -= cost; fn(); saveMeta(); if (S.W) saveWorld(); refreshSheet(); render(); toast(msg); }
+function buy(cost, fn, msg) { if (S.G.gems < cost) return toast("Not enough gems"); if (S.W) snapshot(); S.G.gems -= cost; fn(); saveMeta(); if (S.W) saveWorld(); refreshSheet(); render(); toast(msg); }
 function run(el, ev) { const f = ACT[el.dataset.act]; if (f) f(el, ev); }
 document.addEventListener("click", ev => {
   const el = ev.target.closest("[data-act]"); if (!el) return;
@@ -2315,6 +3152,7 @@ document.addEventListener("click", ev => {
 document.addEventListener("change", ev => {
   const el = ev.target;
   if (el.id === "avTog") { S.G.avatars = el.checked; saveMeta(); refreshSheet(); render(); }
+  if (el.id === "ppFile" && el.files && el.files[0]) shrinkImage(el.files[0]).then(setPhoto, () => toast("Couldn't read that image"));
   if (el.dataset && el.dataset.actChange) { const f = ACT[el.dataset.actChange]; if (f) f(el, ev); }
 });
 document.addEventListener("input", ev => {
@@ -2324,6 +3162,10 @@ document.addEventListener("input", ev => {
   if (d.lf && S.libForm) { S.libForm[d.lf] = el.value; if (d.lf === "desc") { const c = $("#lfCount"); if (c) c.textContent = el.value.length + "/1500"; } }
   if (d.sf && S.storyForm) S.storyForm[d.sf] = el.value;
   if (d.ac && S.acct) S.acct[d.ac] = el.value;
+  if (d.pp && S.pp) S.pp[d.pp] = el.value;
+  if (d.acq && S.addChar) S.addChar[d.acq] = el.value;
+  if (d.su && S.setup) S.setup[d.su] = el.value;
+  if (d.ec && S.editChar) S.editChar[d.ec] = el.value;
   if (el.id === "wsMad") $("#wsMadL").textContent = `${el.value} · ${MADNESS[el.value]}`;
   if (el.hasAttribute && el.hasAttribute("data-grow")) { el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight, 160) + "px"; }
 });
@@ -2331,7 +3173,7 @@ document.addEventListener("keydown", ev => {
   const el = ev.target;
   if (ev.key === "Escape" && (S.sheet || S.sv)) { if (S.sv) ACT.svClose(); else ACT.close(); return; }
   if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) {
-    const map = { dmIn: "[data-act=sendDM]", replyIn: "[data-act=reply]", actTurn: "[data-act=actSend]", svReply: "[data-act=svSend]", actIn: "[data-act=startAct]", keyIn: "[data-act=keySave]", acPass: "[data-act=acSubmit]", acNew: "[data-act=acNewPass]", modelCustom: "[data-act=modelCustom]", photoIn: "[data-act=post]" };
+    const map = { dmIn: "[data-act=sendDM]", replyIn: "[data-act=reply]", actTurn: "[data-act=actSend]", svReply: "[data-act=svSend]", actIn: "[data-act=startAct]", keyIn: "[data-act=keySave]", groqKeyIn: "[data-act=provKeySave][data-p=groq]", geminiKeyIn: "[data-act=provKeySave][data-p=gemini]", acPass: "[data-act=acSubmit]", ppQ: "[data-act=ppSearch]", acQ: "[data-act=addCharGo]", ppUrl: "[data-act=ppUrl]", acNew: "[data-act=acNewPass]", modelCustom: "[data-act=modelCustom]", photoIn: "[data-act=post]" };
     if (el.id && el.id.startsWith("ev_")) { ev.preventDefault(); const b = el.parentElement.querySelector("[data-act=eventCustom]"); if (b) run(b, ev); return; }
     if (map[el.id]) { ev.preventDefault(); const b = document.querySelector(map[el.id]); if (b) run(b, ev); return; }
     if (el.id === "composer" && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); ACT.post(); }
@@ -2352,6 +3194,9 @@ function normalizeWorld(w) {
   w.me = Object.assign({ name: "me", handle: "me", bio: "", look: "", av: { e: "😎", c: 0 }, followers: 100, humor: 10, aura: 10, xp: 0, level: 1, sp: 0, unlocks: 0, skills: [], goal: "", milestones: [], boosts: { viral: 0, clout: 0 } }, w.me || {});
   if (!w.me.boosts) w.me.boosts = { viral: 0, clout: 0 };
   for (const p of w.posts) { if (!Array.isArray(p.replies)) p.replies = []; p.pending = false; }
+  if (!w.npcs || typeof w.npcs !== "object") w.npcs = {};
+  for (const c of w.chars) { c.av = c.av || { e: "🙂" }; if (!c.av.pic) Object.assign(c.av, { pic: derivePic(c.name, c.handle, c.bio), picAuto: true }); }
+  if (!w.me.av.pic) Object.assign(w.me.av, { pic: derivePic(w.me.name, w.me.handle, w.me.bio), picAuto: true });
   w.madness = clamp(num(w.madness) || 3, 1, 5); w.day = Math.max(1, num(w.day) || 1);
   if (w.act) w.act.busy = false;
   for (const e of w.events) e.busy = false;
@@ -2419,6 +3264,7 @@ function boot() {
   S.G = Object.assign(newGlobal(), saved || {});
   S.G.stats = Object.assign(newGlobal().stats, S.G.stats || {});
   S.G.req = S.G.req || { day: "", n: 0 };
+  if (!saved || !saved.avMode) S.G.avMode = saved && saved.avatars === false ? "emoji" : "aesthetic";
   if (!saved) seedSample();
   applyTheme();
   render();
@@ -2426,7 +3272,8 @@ function boot() {
   registerSW();
   loadModels().then(() => { if (S.sheet && S.sheet.fn === sheetApi) refreshSheet(); renderMeter(); });
   if (S.G.apiKey) refreshKey();
-  else setTimeout(() => openApi("Welcome! Paste a free OpenRouter API key to start. You can look around the sample world first."), 400);
+  if (!hasAI()) setTimeout(() => openApi("Welcome! Paste a free API key (OpenRouter, Groq or Gemini) to start. You can look around the sample world first."), 400);
+  for (const p of ["groq", "gemini"]) if (S.G[PROV[p].keyF]) loadProvModels(p);
 }
 boot();
 </script>
