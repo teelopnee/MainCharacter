@@ -205,8 +205,9 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 .hero-home h1 em{font-style:normal;color:var(--accent)}
 
 /* sheet (modal) */
-.scrim{position:fixed;inset:0;background:rgba(15,5,10,.45);z-index:40;display:flex;align-items:flex-end;justify-content:center;animation:fade .18s}
-.sheet{width:100%;max-width:var(--col);max-height:92%;background:var(--surface);border-radius:20px 20px 0 0;display:flex;flex-direction:column;box-shadow:var(--shadow);animation:up .24s cubic-bezier(.2,.8,.2,1);padding-bottom:env(safe-area-inset-bottom,0px)}
+.scrim{position:fixed;inset:0;background:rgba(15,5,10,.45);z-index:40;display:flex;align-items:flex-end;justify-content:center}
+.scrim.in{animation:fade .18s} .scrim.in .sheet{animation:up .24s cubic-bezier(.2,.8,.2,1)}
+.sheet{width:100%;max-width:var(--col);max-height:92%;background:var(--surface);border-radius:20px 20px 0 0;display:flex;flex-direction:column;box-shadow:var(--shadow);padding-bottom:env(safe-area-inset-bottom,0px)}
 .sheet.full{height:100%;max-height:100%;border-radius:0}
 .sheet .sh-head{display:flex;align-items:center;gap:8px;padding-block:10px;border-bottom:1px solid var(--line)}
 .sheet .sh-head h2{font-size:18px;flex:1}
@@ -1835,7 +1836,7 @@ function refreshSheet(first) {
   if (!S.sheet) return;
   const body = layer.querySelector(".sh-body"), st = body ? body.scrollTop : 0;
   const ae = document.activeElement, aeId = ae && ae.id && layer.contains(ae) ? ae.id : null;
-  layer.innerHTML = `<div class="scrim" data-act="scrim"><div class="sheet ${S.sheet.full ? "full" : ""}" role="dialog" aria-modal="true">${S.sheet.fn()}</div></div>`;
+  layer.innerHTML = `<div class="scrim${first ? " in" : ""}" data-act="scrim"><div class="sheet ${S.sheet.full ? "full" : ""}" role="dialog" aria-modal="true">${S.sheet.fn()}</div></div>`;
   if (!first) { const b = layer.querySelector(".sh-body"); if (b) b.scrollTop = st; }
   if (aeId) { const el = document.getElementById(aeId); if (el) el.focus({ preventScroll: true }); }
   autoGrow();
@@ -2216,6 +2217,9 @@ function cwHogwarts() {
   saveWorld(); flushWorld(); closeLayer(); render();
   toast(`Welcome to Hogwarts, ${W.me.house} ${HOUSES[W.me.house].em}`);
 }
+const VIBE_PICS = { Funny: "rubber duck", Mysterious: "full moon", Spicy: "chili pepper", Sweet: "macaron", Villain: "black cat", "Main character": "sunflower", "Fresh newcomer": "cherry blossom", "Already famous": "crown" };
+const PIC_IDEAS = ["snowy owl", "black cat", "full moon", "red rose", "old books", "crown", "red fox", "cherry blossom", "vinyl record", "cauldron", "butterfly", "starry night"];
+const picChips = (cur, act) => `<div class="row wrap" style="gap:6px;margin-top:6px">${PIC_IDEAS.map(x => `<button class="chip" style="padding:4px 10px;font-size:12.5px" data-act="${act}" data-id="${esc(x)}" aria-pressed="${cur === x}">${esc(x)}</button>`).join("")}</div>`;
 const VIBES = ["Funny", "Mysterious", "Spicy", "Sweet", "Villain", "Main character", "Fresh newcomer", "Already famous"];
 const EMOJIS = ["😎", "🌙", "🦊", "🐰", "🐻‍❄️", "⭐", "🍓", "🐯", "🦋", "🎀", "🖤", "🍀", "👑", "🐉", "🌸", "🧸", "🎧", "🐼", "🔥", "🍜"];
 function swatches(cur, act) { return `<div class="row wrap" style="gap:8px">${COLORS.map((_, i) => `<button data-act="${act}" data-id="${i}" aria-label="Color ${i + 1}" style="width:30px;height:30px;border-radius:50%;${avStyle({ c: i })};${cur === i ? "box-shadow:0 0 0 2px var(--surface),0 0 0 4px var(--accent)" : ""}"></button>`).join("")}</div>`; }
@@ -2247,7 +2251,7 @@ function sheetCreate() {
       <button class="btn accent block" data-act="cwNext">Next</button>
     </div>`;
   } else if (c.step === 2) {
-    c.av.pic = String(c.pic || "").trim() || (c.preset === HP_PRESET && HOUSES[c.house] ? HOUSES[c.house].pic : derivePic(c.name || "new account", c.handle || "me", c.vibe));
+    c.av.pic = String(c.pic || "").trim() || (c.preset === HP_PRESET && HOUSES[c.house] ? HOUSES[c.house].pic : c.preset === WW_PRESET ? "snowy owl" : VIBE_PICS[c.vibe] || "snowy owl");
     b = `<div class="col gut" style="gap:14px">
       ${avPicker(c.av, "cw", "cw")}
       <div class="field"><label for="cwName">Display name</label><input class="in" id="cwName" data-cw="name" maxlength="40" value="${esc(c.name)}" placeholder="e.g. Mia"></div>
@@ -2259,7 +2263,8 @@ function sheetCreate() {
       <div class="field"><label for="cwSit">Situation / storyline (optional)</label><textarea class="in" id="cwSit" data-cw="situation" maxlength="600" placeholder="e.g. A secret duelling club meets at midnight and you just got an invitation">${esc(c.situation || "")}</textarea><div class="tiny muted">You can change the era, place, role and storyline later in Explore → Story setup.</div></div>` : ""}
       ${c.preset === HP_PRESET ? `<div class="field"><label>Your house</label>${chips([...Object.keys(HOUSES).map(h => [h, HOUSES[h].em + " " + h]), ["Sorting Hat", "🎩 Let the Sorting Hat choose"]], c.house, "cwHouse")}<div class="tiny muted">Your house decides who's in your circle at the start and your three skills.</div></div>` : ""}
       <div class="field"><label>Vibe</label>${chips(VIBES.map(v => [v, v]), c.vibe, "cwVibe")}</div>
-      <div class="field"><label for="cwPic">Profile picture (describe it)</label><input class="in" id="cwPic" data-cw="pic" maxlength="200" value="${esc(c.pic || "")}" placeholder="${c.preset === HP_PRESET ? "a few words, e.g. snowy owl" : "a few words, e.g. black cat, vinyl records"}"></div>
+      <div class="field"><label for="cwPic">Profile picture (a few words)</label><div class="row"><input class="in" id="cwPic" data-cw="pic" maxlength="80" value="${esc(c.pic || "")}" placeholder="e.g. snowy owl, black cat, red rose"><button class="btn sm soft" data-act="cwPicGo">Show</button></div>
+        ${picChips(c.pic, "cwPicIdea")}<div class="tiny muted">Pick one, or type your own words and tap Show. You can also upload your own photo later from your profile.</div></div>
       <div class="field"><label for="cwLook">How you look (used for photos of you)</label><input class="in" id="cwLook" data-cw="look" maxlength="200" value="${esc(c.look)}" placeholder="e.g. short black bob, silver hoops, oversized denim jacket"></div>
       <div class="field"><label for="cwBio">Bio / backstory (more detail = better role-play)</label><textarea class="in" id="cwBio" data-cw="bio" maxlength="1500" placeholder="Who are you, what do you want, what are you hiding?">${esc(c.bio)}</textarea>
         <button class="btn soft sm" data-act="cwBioAI" style="align-self:flex-start" ${c.busy ? "disabled" : ""}>${c.busy ? '<span class="spin"></span>' : "✨"} Suggest bios</button>
@@ -2341,7 +2346,7 @@ function cwStart() {
   const W = {
     id: uid("w"), name: g.world_name, emoji: g.emoji, desc: g.description, fandom: c.preset === -1 ? c.custom : PRESETS[c.preset][1],
     madness: c.madness, muteNews: false, imgStyle: c.imgStyle, day: 1, createdAt: Date.now(), savedAt: 0,
-    me: { name: c.name.trim(), handle: c.handle, bio: c.bio.trim(), look: c.look.trim(), vibe: c.vibe, av: Object.assign({}, c.av, { pic: String(c.pic || "").trim() || derivePic(c.name.trim(), c.handle, c.bio.trim() || c.vibe) }), followers: rnd(80, 260), humor: 10, aura: 10, xp: 0, level: 1, sp: 1, unlocks: 0,
+    me: { name: c.name.trim(), handle: c.handle, bio: c.bio.trim(), look: c.look.trim(), vibe: c.vibe, av: Object.assign({}, c.av, { pic: String(c.pic || "").trim() || VIBE_PICS[c.vibe] || "snowy owl" }), followers: rnd(80, 260), humor: 10, aura: 10, xp: 0, level: 1, sp: 1, unlocks: 0,
       skills: (r.skills || []).slice(0, 3).map(s => ({ name: String(s.name || "Skill"), desc: String(s.desc || ""), lv: 1 })), goal: String(r.goal || ""),
       milestones: (r.milestones || []).slice(0, 9).map(t => ({ t: String(t), done: false })), boosts: { viral: 1, clout: 1 } },
     chars: g.chars, posts: [], dms: {}, dmRead: {}, dmMeta: {}, stories: [], notifs: [], log: [], events: [], invites: [], trends: (r.trends || []).slice(0, 5).map(String), act: null
@@ -2500,7 +2505,8 @@ function sheetEditMe() {
     <div class="row wrap"><button class="btn sm soft" data-act="photoMe">${ic("camera")} ${e.av.img ? "Change photo" : "Use a real photo"}</button>${e.av.img ? `<span class="tiny muted">A photo is set. Remove it to use the illustration again.</span>` : ""}</div>
     <div class="field"><label for="emName">Display name</label><input class="in" id="emName" maxlength="40" value="${esc(e.name ?? me.name)}"></div>
     <div class="field"><label for="emHandle">Username (@)</label><input class="in" id="emHandle" maxlength="24" value="${esc(e.handle ?? me.handle)}"></div>
-    <div class="field"><label for="emPic">Profile picture (describe it)</label><input class="in" id="emPic" maxlength="200" value="${esc(e.pic ?? (me.av.picAuto ? "" : me.av.pic || ""))}" placeholder="a few words, e.g. snowy owl"></div>
+    <div class="field"><label for="emPic">Profile picture (a few words)</label><div class="row"><input class="in" id="emPic" maxlength="80" value="${esc(e.pic ?? (me.av.picAuto ? "" : me.av.pic || ""))}" placeholder="e.g. snowy owl, black cat, red rose"><button class="btn sm soft" data-act="emPicGo">Show</button></div>
+      ${picChips(e.pic ?? me.av.pic, "emPicIdea")}${e.av.img ? `<div class="tiny muted">You're using a real photo right now; picking words here switches back to a matched picture.</div>` : ""}</div>
     <div class="field"><label for="emLook">How you look (for photos)</label><input class="in" id="emLook" maxlength="200" value="${esc(e.look ?? me.look ?? "")}"></div>
     <div class="field"><label for="emBio">Bio</label><textarea class="in" id="emBio" maxlength="1500">${esc(e.bio ?? me.bio)}</textarea></div>
     <button class="btn accent" data-act="emSave">Save</button>
@@ -2865,6 +2871,7 @@ function sheetActivity() {
 }
 /* ================= actions (click delegation) ================= */
 const val = id => { const el = document.getElementById(id); return el ? el.value : ""; };
+function setEditPic(x) { const e = S.editMe; e.pic = x; if (x) e.av = Object.assign({}, e.av, { pic: x, picAuto: false, img: undefined }); refreshSheet(); }
 function keepEditMe() { const e = S.editMe; e.name = val("emName"); e.handle = val("emHandle"); e.bio = val("emBio"); e.look = val("emLook"); e.pic = val("emPic"); }
 function avTarget(pfx) { return pfx === "cw" ? S.cw.av : pfx === "em" ? S.editMe.av : S.libForm.av; }
 function avEdit(pfx, fn) { if (pfx === "em") keepEditMe(); fn(avTarget(pfx)); refreshSheet(); }
@@ -3048,6 +3055,10 @@ const ACT = {
   cwBack() { S.cw.step = 1; refreshSheet(); },
   cwShuffle() { avEdit("cw", a => a.sd = uid()); }, cwStyle(el) { avEdit("cw", a => a.st = el.dataset.id); }, cwColor(el) { avEdit("cw", a => a.c = +el.dataset.id); },
   cwVibe(el) { S.cw.vibe = el.dataset.id; refreshSheet(); },
+  cwPicIdea(el) { S.cw.pic = el.dataset.id; refreshSheet(); },
+  cwPicGo() { S.cw.pic = val("cwPic").trim(); refreshSheet(); },
+  emPicIdea(el) { keepEditMe(); setEditPic(el.dataset.id); },
+  emPicGo() { keepEditMe(); setEditPic(S.editMe.pic.trim()); },
   cwBioAI() { cwBioAI(); },
   cwBioPick(el) { S.cw.bio = S.cw.bios[+el.dataset.id] || S.cw.bio; refreshSheet(); },
   cwGen() { S.cw.preset === HP_PRESET ? cwHogwarts() : S.cw.preset === WW_PRESET ? cwWizarding() : cwGenerate(); },
@@ -3173,7 +3184,7 @@ document.addEventListener("keydown", ev => {
   const el = ev.target;
   if (ev.key === "Escape" && (S.sheet || S.sv)) { if (S.sv) ACT.svClose(); else ACT.close(); return; }
   if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) {
-    const map = { dmIn: "[data-act=sendDM]", replyIn: "[data-act=reply]", actTurn: "[data-act=actSend]", svReply: "[data-act=svSend]", actIn: "[data-act=startAct]", keyIn: "[data-act=keySave]", groqKeyIn: "[data-act=provKeySave][data-p=groq]", geminiKeyIn: "[data-act=provKeySave][data-p=gemini]", acPass: "[data-act=acSubmit]", ppQ: "[data-act=ppSearch]", acQ: "[data-act=addCharGo]", ppUrl: "[data-act=ppUrl]", acNew: "[data-act=acNewPass]", modelCustom: "[data-act=modelCustom]", photoIn: "[data-act=post]" };
+    const map = { dmIn: "[data-act=sendDM]", replyIn: "[data-act=reply]", actTurn: "[data-act=actSend]", svReply: "[data-act=svSend]", actIn: "[data-act=startAct]", keyIn: "[data-act=keySave]", groqKeyIn: "[data-act=provKeySave][data-p=groq]", geminiKeyIn: "[data-act=provKeySave][data-p=gemini]", acPass: "[data-act=acSubmit]", ppQ: "[data-act=ppSearch]", acQ: "[data-act=addCharGo]", cwPic: "[data-act=cwPicGo]", emPic: "[data-act=emPicGo]", ppUrl: "[data-act=ppUrl]", acNew: "[data-act=acNewPass]", modelCustom: "[data-act=modelCustom]", photoIn: "[data-act=post]" };
     if (el.id && el.id.startsWith("ev_")) { ev.preventDefault(); const b = el.parentElement.querySelector("[data-act=eventCustom]"); if (b) run(b, ev); return; }
     if (map[el.id]) { ev.preventDefault(); const b = document.querySelector(map[el.id]); if (b) run(b, ev); return; }
     if (el.id === "composer" && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); ACT.post(); }
