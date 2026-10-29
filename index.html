@@ -155,6 +155,23 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 .post.reply.focus{background:color-mix(in srgb,var(--accent-soft) 30%,transparent)}
 .morelink{display:block;width:100%;text-align:left;padding-block:10px;color:var(--blue);font-size:14px;border-bottom:1px solid var(--line)}
 .morelink[disabled]{opacity:.5}
+.post{position:relative}
+.poll{margin-top:10px;display:flex;flex-direction:column;gap:6px}
+.pollopt{border:1px solid var(--accent);color:var(--accent);border-radius:999px;padding:7px 12px;font-weight:600;text-align:center}
+.pollbar{position:relative;display:flex;align-items:center;gap:8px;padding:7px 12px;border-radius:10px;background:var(--surface-2);overflow:hidden}
+.pollbar .fill{position:absolute;left:0;top:0;bottom:0;background:color-mix(in srgb,var(--accent) 22%,transparent)}
+.pollbar.mine .fill{background:color-mix(in srgb,var(--accent) 38%,transparent)}
+.pollbar .lbl{position:relative;flex:1;font-size:14px}.pollbar b{position:relative;font-size:13px}
+.tagl{color:var(--blue);font:inherit;display:inline;padding:0}
+.feedtabs{display:flex;border-bottom:1px solid var(--line)}
+.feedtabs button{flex:1;padding:12px 0;font-weight:600;color:var(--muted);border-bottom:3px solid transparent}
+.feedtabs button[aria-pressed="true"]{color:var(--fg);border-bottom-color:var(--accent)}
+.pmore{position:absolute;right:10px;top:8px;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;color:var(--muted)}
+.pmore svg{width:18px;height:18px}
+.shot{margin-top:10px;border:1px dashed var(--line);border-radius:14px;padding:10px 12px;background:var(--surface-2)}
+.upthumb{width:64px;height:64px;object-fit:cover;border-radius:10px;flex:none}
+.pimg.up{aspect-ratio:auto}
+.pimg.up img{height:auto;max-height:520px}
 .quote{margin-top:10px;border:1px solid var(--line);border-radius:14px;padding:10px 12px;cursor:pointer}
 .stats{display:flex;gap:16px;font-size:14px;color:var(--muted);padding-block:10px;border-bottom:1px solid var(--line);flex-wrap:wrap}
 .stats b{color:var(--fg)}
@@ -396,7 +413,9 @@ const P = {
   lock: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
   trash: '<path d="M3 6h18M8 6V4h8v2M6 6l1 15h10l1-15"/>',
   camera: '<path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/>',
-  key: '<circle cx="8" cy="15" r="4"/><path d="m10.8 12.2 8.7-8.7M17 6l2.5 2.5M14.5 8.5 16 10"/>'
+  key: '<circle cx="8" cy="15" r="4"/><path d="m10.8 12.2 8.7-8.7M17 6l2.5 2.5M14.5 8.5 16 10"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
+  more: '<path d="M5 12h.01M12 12h.01M19 12h.01" stroke-width="3.4"/>'
 };
 const ic = (n, sw = 2) => `<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[n] || ""}</svg>`;
 const badge = () => `<span class="badge" title="Verified">${ic("check")}</span>`;
@@ -504,7 +523,7 @@ function setCloud(state, err) {
   if (S.sheet && S.sheet.fn === sheetAccount) refreshSheet();
 }
 /* what goes to the cloud: never the API key; request counts and the account owner are per device */
-const KEY_FIELDS = ["apiKey", "groqKey", "geminiKey"];
+const KEY_FIELDS = ["apiKey", "groqKey", "geminiKey", "hordeKey", "cfImageURL"];
 function cloudMeta(G = S.G) { const m = JSON.parse(JSON.stringify(G)); for (const k of KEY_FIELDS) delete m[k]; delete m.owner; delete m.req; return m; }
 const localKeys = G => Object.fromEntries(KEY_FIELDS.map(k => [k, (G && G[k]) || ""]));
 function mergeMeta(local, remote, remoteWins) {
@@ -888,13 +907,14 @@ function meterInfo() {
 function renderMeter() { document.querySelectorAll("[data-meter]").forEach(el => { const m = meterInfo(); el.lastChild.textContent = m.label; el.title = m.title; }); if (S.sheet && S.sheet.fn === sheetApi) refreshSheet(); }
 
 /* ================= prompt context ================= */
+const FEED_RULE = "ONLINE vs REAL LIFE: posts and replies are typed on the social feed, not said out loud or done in person. When the player posts or replies, people react to it as something they READ online (\"saw your post\", screenshots, quote-posts, gossip about the post), never as if the player shouted it in a hallway or did it in front of them, unless the post itself clearly describes something the player physically did. DMs and group chats are private texts. Only events and activities happen in person.";
 const REALISM_RULE = "This world works like real life. Everyone knows the public facts about the player (family, relationships, reputation, things they did in public) and acts on them: family behaves like family and others treat the player by their family's name; friends defend them; rivals and enemies provoke them; people gossip and talk behind the player's back (subtweets, rumours that grow in the retelling, gossip pages), especially about the player's reputation, personality quirks and anything odd they do. First impressions come from reputation. Secrets stay secret until something reveals them. People remember, and everyone's knowledge stays consistent.";
 const LANG_RULE = "Write ALL in-world text in natural, casual English, the way people really post and text (lowercase vibes, slang, emoji where it fits). Every character keeps their own distinct voice.";
 const IMG_RULE = `Photos: about 1 in 3 posts by characters or random accounts include a photo. For a photo post set "image" to a vivid description of the picture itself (subject, outfit, setting, lighting, camera angle) in under 30 words. Never put names of real people or copyrighted characters in "image"; describe how they look instead. Posts without a photo use "image": null.`;
 function charLine(c) {
   return `- ${c.name} (@${c.handle})${c.mem && c.mem.length ? " [remembers about the player: " + c.mem.slice(-4).join("; ") + "]" : ""}${c.kind === "news" ? " [news/gossip account]" : ""}: ${String(c.desc || c.bio || "").slice(0, 420)}${c.look ? " | looks: " + c.look : ""} | relationship with player: ${Math.round(num(c.rel))}/100${c.chem ? ", dynamic: " + c.chem : ""}${c.followsMe ? ", follows player" : ""}`;
 }
-function postLine(W, p) { return `@${handleOf(W, p.a)}: ${String(p.t).slice(0, 160)}${p.img ? " [photo: " + String(p.img.d).slice(0, 80) + "]" : ""}`; }
+function postLine(W, p) { return `@${handleOf(W, p.a)}${p.a === "alt" ? " (player's private alt)" : ""}: ${String(p.t).slice(0, 160)}${p.edited ? " (edited)" : ""}${p.img ? " [photo: " + String(p.img.d).slice(0, 80) + "]" : ""}${p.shot ? ` [screenshot of the player's ${p.shot.kind === "dm" ? "DM" : p.shot.kind + " post"}: "${String(p.shot.text).slice(0, 80)}"]` : ""}${p.poll ? " [poll: " + p.poll.opts.map(o => o.t).join(" / ") + "]" : ""}`; }
 function ctx(W, opts = {}) {
   const me = W.me;
   const chars = W.chars.filter(c => c.unlocked || c.kind === "news");
@@ -907,8 +927,11 @@ FANDOM/SETTING: ${W.fandom || W.name}
 ${W.sandbox || W.lore ? "CANON & LORE (follow strictly):\n" + (W.sandbox ? sandboxLore(W) : W.lore) + "\n" : ""}DRAMA LEVEL (1-5): ${W.madness} = ${MADNESS[W.madness]}${W.muteNews ? "\nNews/gossip accounts are MUTED: never generate news posts." : ""}
 IN-WORLD DAY: ${W.day}${W.calendar ? " (" + dateLabel(W) + ")" : ""}
 PLAYER: ${me.name} (@${me.handle}). Bio: ${me.bio || "-"}. Vibe: ${me.vibe || "-"}. ${me.look ? "Looks: " + me.look + ". " : ""}Followers ${me.followers}, humor ${Math.round(me.humor)}, aura ${Math.round(me.aura)}, level ${me.level}.
-PLAYER GOAL: ${me.goal || "-"}
-${(me.bonds || []).length ? "PLAYER'S RELATIONSHIPS (facts of this world):\n" + me.bonds.map(b => `- ${b.name}: ${b.type}${b.secret ? " — SECRET: only the player and " + b.name + " know; nobody else acts on it unless it comes out" : " — everyone knows"}${b.note ? ". " + b.note : ""}`).join("\n") + "\n" : ""}${(me.rep || []).length ? "WHAT PEOPLE SAY ABOUT THE PLAYER (their reputation): " + me.rep.join("; ") + "\n" : ""}REALISM: ${REALISM_RULE}
+PLAYER GOAL: ${me.goal || "-"}${me.alt ? `\nPLAYER'S PRIVATE ALT: @${me.alt.handle} ("${me.alt.name}"). ${me.alt.exposed ? "It was exposed: everyone knows it's the player." : `Secret: only close friends follow it and know it's the player (${altFriends(W).map(c => c.name).join(", ") || "nobody yet"}). Everyone else has no idea.`}` : ""}
+${(me.bonds || []).length ? "PLAYER'S RELATIONSHIPS (facts of this world):\n" + me.bonds.map(b => `- ${b.name}: ${b.type}${b.secret ? " — SECRET: only the player and " + b.name + " know; nobody else acts on it unless it comes out" : " — everyone knows"}${b.note ? ". " + b.note : ""}`).join("\n") + "\n" : ""}${(me.rep || []).length ? "WHAT PEOPLE SAY ABOUT THE PLAYER (their reputation): " + me.rep.join("; ") + "\n" : ""}${(W.blocked || []).length ? "BLOCKED BY THE PLAYER: " + W.blocked.map(h => "@" + h).join(", ") + ". They can't see the player's posts, reply to them or message them; they know they've been blocked and may talk about it elsewhere.\n" : ""}REALISM: ${REALISM_RULE}
+${FEED_RULE}
+NEVER SPEAK AS THE PLAYER: no post, reply, DM or group message may use the player's exact @${me.handle}; only the player writes as themselves.
+IMPOSTORS (like real life): when the drama calls for it, a fake account may pretend to be the player or a well-known character: a handle one letter off or with a swapped dot/underscore (e.g. @${lookalike(me.handle)}), the same display name and photo vibe, a bio that tries to pass as real, posting things that confuse people or get the real one in trouble. People can be fooled until someone notices or it gets reported. At most one active impostor at a time, and only now and then (more often at higher drama levels).
 PLAYER SKILLS: ${me.skills.map(s => `${s.name} lv${s.lv}`).join(", ")}
 CHARACTERS IN THE PLAYER'S CIRCLE:
 ${chars.map(charLine).join("\n") || "-"}
@@ -916,7 +939,7 @@ ${ties ? "RELATIONSHIPS BETWEEN CHARACTERS (they act on these and have their own
 ${mem || "- (the story just started)"}
 RECURRING ACCOUNTS (random people already in this world):
 ${npcs || "- (none yet)"}
-RECENT FEED:
+RECENT FEED (posts on the social feed, typed online):
 ${recent || "(empty)"}
 ${LANG_RULE}
 Stay in the world's tone. Characters remember the story memory and act consistently. Keep it suitable for ages 13+ (no explicit sexual content, no graphic violence).`;
@@ -924,8 +947,17 @@ Stay in the world's tone. Characters remember the story memory and act consisten
 /* worlds with a real calendar (e.g. canon timelines): each in-world day moves the date by dayStep days */
 function worldDate(W, day = W.day) { if (!W.calendar) return null; const d = new Date(W.calendar + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + (day - 1) * (W.dayStep || 1)); return d; }
 function dateLabel(W, day) { const d = worldDate(W, day); return d ? d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }) : ""; }
+const isMine = a => a === "me" || a === "alt";
+const isBlocked = (W, h) => (W.blocked || []).includes(String(h || "").toLowerCase().replace(/^@/, ""));
+const hasMuted = (W, t) => { const m = W.muted || []; if (!m.length) return false; const x = String(t || "").toLowerCase(); return m.some(w => w && x.includes(w)); };
+/* post text with tappable #hashtags and @mentions (escaped first, so "&#39;" never reads as a tag) */
+function richText(t) {
+  return esc(t).replace(/(^|[^&\w])#([\p{L}\p{N}_]{1,40})/gu, (m, a, tag) => `${a}<button class="tagl" data-act="tagSearch" data-id="#${tag}">#${tag}</button>`)
+    .replace(/(^|[^\w.])@([A-Za-z0-9._]{2,30})/g, (m, a, h) => `${a}<button class="tagl" data-act="mention" data-id="${h}">@${h}</button>`);
+}
 function handleOf(W, a) {
   if (a === "me") return W.me.handle;
+  if (a === "alt") return (W.me.alt || {}).handle || W.me.handle;
   if (typeof a === "object" && a) return a.h || "user";
   const c = W.chars.find(x => x.id === a); return c ? c.handle : "user";
 }
@@ -942,20 +974,53 @@ function rememberNPC(W, handle, name, x = {}) {
   if (!n) n = W.npcs[k] = { h: handle, n: String(name || handle).slice(0, 40), e: pick(NPC_EMOJI), c: hashN(handle) % COLORS.length, st: AV_STYLES[hashN(handle + "x") % AV_STYLES.length], bio: "", pic: "", picAuto: false, first: W.day, seen: 0 };
   if (x.bio && typeof x.bio === "string" && !n.bio) n.bio = x.bio.slice(0, 160);
   if (x.pic && typeof x.pic === "string" && (!n.pic || n.picAuto)) { n.pic = x.pic.slice(0, 200); n.picAuto = false; }
+  if (x.impostorOf && !n.impostorOf) {   // impostors copy the look of whoever they pretend to be
+    n.impostorOf = x.impostorOf;
+    const src = x.impostorOf === "me" ? W.me : W.chars.find(c => c.id === x.impostorOf);
+    if (src && src.av) { if (!x.pic) { n.pic = src.av.pic || n.pic; n.picAuto = false; } n.e = src.av.e || n.e; n.c = src.av.c ?? n.c; }
+  }
   if (!n.pic) { n.pic = derivePic(n.n, n.h, n.bio); n.picAuto = true; }
   n.seen = Date.now();
   return n;
 }
 const npcAuthor = n => ({ h: n.h, n: n.n, e: n.e, c: n.c, st: n.st, pic: n.pic });
 const cleanHandle = h => String(h || "").replace(/^@/, "").replace(/\s+/g, "").slice(0, 24);
+const normH = h => String(h || "").toLowerCase().replace(/^@/, "").replace(/[^a-z0-9]/g, "");
+/* the AI tried to write as the player themselves */
+const isPlayerVoice = (W, h, name) => cleanHandle(h).toLowerCase() === String(W.me.handle).toLowerCase() || (!cleanHandle(h) && name && String(name).trim().toLowerCase() === String(W.me.name).toLowerCase());
+/* edit distance, capped: enough to spot a handle that is "one letter off" */
+function lev(a, b) {
+  a = String(a); b = String(b); if (Math.abs(a.length - b.length) > 2) return 9;
+  let prev = Array.from({ length: b.length + 1 }, (_, k) => k);
+  for (let i2 = 1; i2 <= a.length; i2++) { const cur = [i2]; for (let k = 1; k <= b.length; k++) cur[k] = Math.min(prev[k] + 1, cur[k - 1] + 1, prev[k - 1] + (a[i2 - 1] === b[k - 1] ? 0 : 1)); prev = cur; }
+  return prev[b.length];
+}
+/* a believable fake of a handle: rn for m, I for l, or a doubled letter */
+const lookalike = h => { h = cleanHandle(h); return /m/.test(h) ? h.replace("m", "rn") : /l/.test(h) ? h.replace("l", "I") : h + h.slice(-1); };
+/* who (if anyone) a handle/name is trying to pass as */
+function impostorTarget(W, handle, name) {
+  const h = cleanHandle(handle).toLowerCase(), me = W.me;
+  if (h && h !== me.handle.toLowerCase() && (normH(h) === normH(me.handle) || lev(h, me.handle.toLowerCase()) <= 2 || String(name || "").trim().toLowerCase() === me.name.toLowerCase())) return "me";
+  const c = W.chars.find(x => x.kind !== "news" && h !== x.handle.toLowerCase() && (normH(h) === normH(x.handle) || (h.length > 5 && lev(h, x.handle.toLowerCase()) <= 1)));
+  return c ? c.id : null;
+}
+function distinctFromPlayer(W, handle, name, x) {
+  const t = impostorTarget(W, handle, name);
+  return { handle, name, x: t ? Object.assign({}, x, { impostorOf: t }) : x };
+}
 function authorFrom(W, h, name, x) {
   const c = findCharByHandle(W, h);
   if (c) return c.id;
+  if (isPlayerVoice(W, h, name)) return null;   // only the player speaks for the player
+  const d = distinctFromPlayer(W, cleanHandle(h) || "user" + rnd(100, 9999), name, x || {}); h = d.handle; name = d.name; x = d.x;
+  const known = W.npcs && W.npcs[String(h).toLowerCase()]; if (known && known.suspended) return null;   // suspended accounts are gone
   return npcAuthor(rememberNPC(W, cleanHandle(h) || "user" + rnd(100, 9999), name, x || {}));
 }
 /* a random account becomes a full character (follows you, has DMs) when it slides into your DMs or you follow it */
 function promoteNPC(W, handle, name, x = {}) {
   const ex = findCharByHandle(W, handle); if (ex) return ex;
+  if (isPlayerVoice(W, handle, name)) return null;
+  const d = distinctFromPlayer(W, cleanHandle(handle), name, x); handle = d.handle; name = d.name; x = d.x;
   const n = rememberNPC(W, cleanHandle(handle) || "user" + rnd(100, 9999), name, x);
   const c = { id: uid("c"), name: n.n, handle: n.h, bio: n.bio, desc: `${n.bio || "A random account in this world"}. Talks and posts in a voice that matches their handle, bio and the topics they care about.`, look: "",
     av: { e: n.e, c: n.c, st: n.st, pic: n.pic }, followers: rnd(40, 4000), unlocked: true, followsMe: true, iFollow: true, kind: "char", npc: true, rel: 5, chem: "" };
@@ -964,32 +1029,68 @@ function promoteNPC(W, handle, name, x = {}) {
 }
 const mkImg = (d, k) => d && typeof d === "string" && d.trim() ? Object.assign({ d: d.trim().slice(0, 300), s: rnd(1, 999999) }, k && typeof k === "string" ? { k: k.slice(0, 60) } : {}) : null;
 /* ================= photos in posts & stories =================
-   AI mode: Pollinations (free, no key) renders the exact picture the AI described.
-   The free tier is rate-limited per IP, so pictures load one at a time through a queue
-   that slows down when the service pushes back, and falls back to a stock photo after 3 tries.
-   Stock mode: Picsum photos, instant but not matched to the text. */
-const IMGS = LS.get("mc_imgs") || {};          // seed -> 1 (AI ok) | 2 (fell back to stock)
-const IMGQ = { q: [], running: false, gap: 3000, tries: {}, pending: {} };
+   The AI describes each photo; an image AI draws it:
+   - AI Horde (default): free, no account, a crowd of volunteer GPUs, so about 30-90 s per picture
+   - your own Cloudflare Worker running FLUX (optional): free tier, a few seconds per picture
+   Drawn pictures are kept on this device (IndexedDB) so each is drawn once. If drawing fails, a
+   matching free photo from Wikimedia Commons is used, then a stock photo. */
+const IMGS = LS.get("mc_imgs") || {};          // seed -> 1 drawn & saved | 2 stock | 3 Commons
+const IMGQ = { q: [], running: 0, pending: {}, fails: 0, pauseUntil: 0 };
+const IMGMEM = {};                             // seed -> data URL of a drawn picture (this session)
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 function saveImgs() { const k = Object.keys(IMGS); if (k.length > 1500) for (const x of k.slice(0, k.length - 1500)) delete IMGS[x]; LS.set("mc_imgs", IMGS); }
-function aiImgURL(img, w, h) {
-  const style = IMG_STYLES[(S.W && S.W.imgStyle) || "photo"] || IMG_STYLES.photo;
-  return `https://image.pollinations.ai/prompt/${encodeURIComponent(img.d + ", " + style)}?width=${w}&height=${h}&seed=${img.s}&nologo=true&model=flux&referrer=main-character-sim`;
-}
 const stockURL = (img, w, h) => `https://picsum.photos/seed/${img.s}/${w}/${h}`;
-function imgSrc(img, w = 768, h = 768) {
+const blobToDataURL = b => new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = rej; fr.readAsDataURL(b); });
+/* drawn pictures on this device */
+let pixP = null;
+function pixDB() { return pixP || (pixP = new Promise((res, rej) => { try { const r = indexedDB.open("mc_pix", 1); r.onupgradeneeded = () => r.result.createObjectStore("p", { keyPath: "k" }); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); } catch (e) { rej(e); } })); }
+function pixGet(k) { return pixDB().then(db => new Promise(res => { const r = db.transaction("p").objectStore("p").get(k); r.onsuccess = () => res(r.result && r.result.u); r.onerror = () => res(null); })); }
+function pixPut(k, u) { return pixDB().then(db => new Promise(res => { const tx = db.transaction("p", "readwrite"); tx.objectStore("p").put({ k, u, ts: Date.now() }); tx.oncomplete = res; tx.onerror = res; })); }
+/* AI Horde: queue a job, wait for a volunteer GPU, get the picture back as base64 */
+const HORDE = "https://aihorde.net/api/v2";
+const HORDE_MODELS = { photo: ["Dreamshaper", "Deliberate", "stable_diffusion"], anime: ["Anything Diffusion", "Counterfeit", "Flat-2D Animerge"], art: ["Deliberate", "Dreamshaper", "Rev Animated"] };
+async function hordeDraw(prompt, tall, style) {
+  const hdr = { "Content-Type": "application/json", apikey: S.G.hordeKey || "0000000000", "Client-Agent": "main-character-sim:2.0:github.io" };
+  const r = await fetch(HORDE + "/generate/async", { method: "POST", headers: hdr, body: JSON.stringify({
+    prompt: prompt + " ### lowres, blurry, text, watermark, signature, deformed, extra fingers, nsfw",
+    params: { width: tall ? 384 : 512, height: tall ? 640 : 512, steps: 22, n: 1, sampler_name: "k_euler_a", cfg_scale: 6.5, karras: true },
+    nsfw: false, censor_nsfw: true, models: HORDE_MODELS[style] || HORDE_MODELS.photo, r2: false, shared: false }) });
+  const j = await r.json().catch(() => ({})); if (!j.id) throw { message: j.message || "AI Horde refused (" + r.status + ")" };
+  for (let k = 0; k < 60; k++) {
+    await sleep(k ? 4000 : 6000);
+    const c = await (await fetch(HORDE + "/generate/check/" + j.id)).json().catch(() => ({}));
+    if (c.faulted || c.is_possible === false) throw { message: "AI Horde couldn't draw it" };
+    if (c.done) {
+      const st = await (await fetch(HORDE + "/generate/status/" + j.id)).json(), g = st.generations && st.generations[0];
+      if (!g || g.censored || !g.img) throw { message: "no picture" };
+      return /^https?:/.test(g.img) ? g.img : "data:image/webp;base64," + g.img;
+    }
+  }
+  fetch(HORDE + "/generate/status/" + j.id, { method: "DELETE" }).catch(() => { });
+  throw { message: "AI Horde took too long" };
+}
+/* the player's own Cloudflare Worker (FLUX): POST {prompt, seed, width, height} -> image bytes */
+async function cfDraw(prompt, tall, seed) {
+  const r = await fetch(S.G.cfImageURL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt, seed, width: tall ? 576 : 768, height: tall ? 1024 : 768 }) });
+  if (!r.ok) throw { message: "Cloudflare image AI: HTTP " + r.status };
+  const b = await r.blob(); if (!/^image\//.test(b.type) || b.size < 500) throw { message: "Cloudflare image AI sent no picture" };
+  return blobToDataURL(b);
+}
+function imgSrc(img, w = 512, h = 512) {
   if (!img || S.G.imgMode === "off") return null;
+  if (img.up) return img.up;
   if (S.G.imgMode === "stock" || IMGS[img.s] === 2) return stockURL(img, w, h);
   if (IMGS[img.s] === 3 && PICS["post:" + img.s]) return PICS["post:" + img.s];
-  if (IMGS[img.s] === 1 && !S.polliDown) return aiImgURL(img, w, h);
+  if (IMGMEM[img.s]) return IMGMEM[img.s];
   queueImg(img, w, h);
   return null;
 }
 function photoHTML(img) {
+  if (img && img.up) return `<div class="pimg up"><img src="${esc(img.up)}" alt="${esc(img.d)}" loading="lazy"></div>`;   // the player's own photo
   if (!img || S.G.imgMode === "off") return "";
   const src = imgSrc(img);
   if (src) return `<div class="pimg"><img src="${esc(src)}" alt="${esc(img.d)}" loading="lazy" data-is="${img.s}" onerror="imgFail(this)"></div>`;
-  return `<div class="pimg ph" data-ik="${img.s}" title="${esc(img.d)}"><span><b>📷</b>${esc(img.d)}</span></div>`;
+  return `<div class="pimg ph" data-ik="${img.s}" title="${esc(img.d)}"><span><b>🎨</b>${S.G.imgMode === "ai" ? "Drawing… " : ""}${esc(img.d)}</span></div>`;
 }
 /* phrase -> photo on Wikimedia Commons. Tries the phrase, then word pairs, then single words,
    so "glowing enchanted bonsai tree" still lands on a bonsai. Cached per phrase ("" = none found). */
@@ -1041,11 +1142,6 @@ async function pumpPics() {
 }
 function savePics() { const k = Object.keys(PICS); if (k.length > 2000) for (const x of k.slice(0, k.length - 2000)) delete PICS[x]; LS.set("mc_pics", PICS); }
 function swapAv(k, url) { document.querySelectorAll(`[data-avk="${k}"]`).forEach(el => { el.removeAttribute("data-avk"); if (url) el.insertAdjacentHTML("beforeend", imgTag(url)); }); }
-/* Pollinations now asks anonymous apps for a token; check once, and if it refuses,
-   post photos come from Wikimedia Commons (matched to the description), then stock */
-function checkPolli() {
-  return S.polliP || (S.polliP = fetch(aiImgURL({ d: "test", s: 1 }, 64, 64)).then(r => { if (!r.ok) S.polliDown = true; }, () => { }));
-}
 function photoFromCommons(job) {
   const s = job.img.s;
   queuePic(job.img.k || job.img.d, url => { IMGS[s] = url ? 3 : 2; PICS["post:" + s] = url || ""; swapIn(s, url || stockURL(job.img, job.w, job.h)); delete IMGQ.pending[s]; saveImgs(); });
@@ -1056,31 +1152,27 @@ function queueImg(img, w, h) {
   IMGQ.q.push({ img: { d: img.d, s: img.s, k: img.k }, w, h });
   pumpImgs();
 }
-async function pumpImgs() {
-  if (IMGQ.running) return; IMGQ.running = true;
-  await checkPolli();   // find out first whether Pollinations still lets us in
-  while (IMGQ.q.length) {
-    if (S.G.imgMode !== "ai") break;
-    if (S.polliDown) { for (const j of IMGQ.q.splice(0)) photoFromCommons(j); break; }
-    const job = IMGQ.q.shift(), url = aiImgURL(job.img, job.w, job.h), key = job.img.s;
-    const ok = await new Promise(res => {
-      const im = new Image(); const t = setTimeout(() => { im.src = ""; res(false); }, 90000);
-      im.onload = () => { clearTimeout(t); res(im.naturalWidth > 0); };
-      im.onerror = () => { clearTimeout(t); res(false); };
-      im.src = url;
-    });
-    if (ok) { IMGS[key] = 1; IMGQ.gap = Math.max(2500, IMGQ.gap * 0.8); swapIn(key, url); delete IMGQ.pending[key]; }
-    else {
-      const n = (IMGQ.tries[key] || 0) + 1; IMGQ.tries[key] = n;
-      IMGQ.gap = Math.min(60000, IMGQ.gap * 2);
-      if (S.polliDown) { photoFromCommons(job); continue; }
-      if (n < 3) IMGQ.q.push(job);
-      else { IMGS[key] = 2; swapIn(key, stockURL(job.img, job.w, job.h)); delete IMGQ.pending[key]; }
-    }
-    saveImgs();
-    await sleep(IMGQ.gap);
+/* a few pictures at a time: 2 with AI Horde, 3 with your own Cloudflare Worker */
+function pumpImgs() {
+  const max = S.G.cfImageURL ? 3 : 2;
+  while (IMGQ.running < max && IMGQ.q.length) { IMGQ.running++; drawOne(IMGQ.q.shift()).finally(() => { IMGQ.running--; pumpImgs(); }); }
+}
+async function drawOne(job) {
+  const s = job.img.s, done = url => { swapIn(s, url); delete IMGQ.pending[s]; };
+  try { const u = await pixGet(String(s)); if (u) { IMGMEM[s] = u; IMGS[s] = 1; return done(u); } } catch { }
+  if (S.G.imgMode !== "ai") { IMGS[s] = 2; return done(stockURL(job.img, job.w, job.h)); }
+  if (Date.now() < IMGQ.pauseUntil && !S.G.cfImageURL) return photoFromCommons(job);   // Horde keeps failing: use photos for a while
+  const style = (S.W && S.W.imgStyle) || "photo", prompt = `${job.img.d}, ${IMG_STYLES[style] || IMG_STYLES.photo}`, tall = job.h > job.w;
+  try {
+    let url;
+    if (S.G.cfImageURL) { try { url = await cfDraw(prompt, tall, s); } catch (e) { url = await hordeDraw(prompt, tall, style); } }
+    else url = await hordeDraw(prompt, tall, style);
+    IMGQ.fails = 0; IMGMEM[s] = url; IMGS[s] = 1; saveImgs(); pixPut(String(s), url).catch(() => { });
+    done(url);
+  } catch (e) {
+    if (++IMGQ.fails >= 3) { IMGQ.pauseUntil = Date.now() + 10 * 60e3; IMGQ.fails = 0; }
+    photoFromCommons(job);
   }
-  IMGQ.running = false;
 }
 function swapIn(seed, url) {
   document.querySelectorAll(`[data-ik="${seed}"]`).forEach(el => {
@@ -1090,14 +1182,9 @@ function swapIn(seed, url) {
   document.querySelectorAll(`[data-ikbg="${seed}"]`).forEach(el => { el.insertAdjacentHTML("afterbegin", `<img class="sv-photo" src="${esc(url)}" alt="">`); el.classList.add("photo"); });
 }
 window.imgFail = function (el) {
-  const s = el.dataset.is, d = el.alt; el.onerror = null;
-  const stock = `https://picsum.photos/seed/${s}/768/768`;
-  if (IMGS[s] === 1 && d) {   // a Pollinations picture that no longer loads: find a matching photo instead
-    S.polliDown = true;
-    return queuePic(d, url => { IMGS[s] = url ? 3 : 2; PICS["post:" + s] = url || ""; saveImgs(); el.src = url || stock; });
-  }
-  if (IMGS[s] === 1) { IMGS[s] = 2; saveImgs(); }
-  el.src = stock;
+  const s = el.dataset.is; el.onerror = null;
+  if (IMGS[s] === 3) { IMGS[s] = 2; saveImgs(); }
+  el.src = `https://picsum.photos/seed/${s}/512/512`;
 };
 /* ================= game rules ================= */
 const xpNeed = lv => 60 + lv * 40;
@@ -1167,10 +1254,12 @@ function addPosts(list, tag) {
   for (const x of (Array.isArray(list) ? list : [])) {
     if (!x || !x.text) continue;
     const a = authorFrom(W, x.handle, x.name, x);
+    if (a == null) continue;
     const base = typeof a === "string" ? (W.chars.find(c => c.id === a)?.followers || 500) : rnd(50, 3000);
     const p = { id: uid("p"), a, t: String(x.text), img: mkImg(x.image, x.image_tags), day: W.day, ts: Date.now() + made.length, quoteOf: null, likes: Math.round(base * (0.01 + Math.random() * 0.08)), rts: rnd(0, 40), views: Math.round(base * (0.3 + Math.random() * 1.5)), replies: [], tag: tag || null };
     W.posts.unshift(p); made.push(p);
-    if (Array.isArray(x.replies) && x.replies.length) addThreadReplies(W, p, x.replies.map(y => Object.assign({}, y, { reply_to: y && y.reply_to && String(y.reply_to).startsWith("@") ? y.reply_to : "post" })), {}, null, 4, 40);
+    if (Array.isArray(x.poll) && x.poll.length >= 2) p.poll = { opts: x.poll.slice(0, 4).map((t, i) => ({ t: String(t).slice(0, 60), v: Math.max(0, Math.round(num((x.poll_votes || [])[i]))) || rnd(3, 200) })) };
+    if (Array.isArray(x.replies) && x.replies.length) addThreadReplies(W, p, x.replies, {}, null, 4, 40);
   }
   return made;
 }
@@ -1188,24 +1277,32 @@ function threadForAI(W, p, focusId) {
   const lines = pick.map((r, i) => `[#${i + 1}] @${handleOf(W, r.a)} (replying to @${parentHandle(W, p, r)}): ${String(r.t).slice(0, 220)}`).join("\n");
   return { lines, idx, num: id => { const k = Object.keys(idx).find(k => idx[k] === id); return k || null; } };
 }
-/* turn the AI's reply list into thread replies; reply_to may be "#n", "#me", "post", or "@handle" of an earlier reply */
+/* turn the AI's reply list into thread replies. reply_to: "#me" (the player's new reply), "#n" (a listed
+   reply), an id from this same list ("n1"), or "post". Anything unclear goes to the safe default (the
+   player's reply when there is one, else the post) instead of being hung under a random reply. */
 function addThreadReplies(W, p, list, idx = {}, mineId = null, max = 6, likesMax = 60) {
-  const made = [];
+  const made = [], batch = {};
   for (const x of (Array.isArray(list) ? list : []).slice(0, max)) {
     if (!x || !x.text) continue;
-    const rt = String(x.reply_to || "").trim(); let to = null;
+    const a = authorFrom(W, x.handle, x.name, x); if (a == null) continue;   // never as the player
+    if (isBlocked(W, handleOf(W, a)) && (isMine(p.a) || mineId)) continue;   // blocked accounts can't reply to the player
+    const rt = String(x.reply_to || "").trim(), key = rt.toLowerCase().replace(/^#(?=n\d)/, "");
+    let to = mineId;
     if (/^#me$/i.test(rt)) to = mineId;
     else if (idx[rt]) to = idx[rt];
-    else if (rt.startsWith("@")) { const h = rt.slice(1).toLowerCase(); const hit = [...made, ...p.replies].reverse().find(r => handleOf(W, r.a).toLowerCase() === h); to = hit ? hit.id : mineId; }
-    else if (/^(post|null)?$/i.test(rt)) to = rt ? null : mineId;
-    const r = { id: uid("r"), a: authorFrom(W, x.handle, x.name, x), t: String(x.text), likes: rnd(0, likesMax), ts: Date.now() + made.length, to };
+    else if (batch[key]) to = batch[key];
+    else if (rt.startsWith("@")) { const h = rt.slice(1).toLowerCase(); const hit = [...made].reverse().find(r => handleOf(W, r.a).toLowerCase() === h); if (hit) to = hit.id; }
+    else if (/^(post|null|op|original)$/i.test(rt)) to = null;
+    const r = { id: uid("r"), a, t: String(x.text), likes: rnd(0, likesMax), ts: Date.now() + made.length, to };
+    if (handleOf(W, a) === parentHandle(W, p, r) && r.to) r.to = replyById(p, r.to) ? replyById(p, r.to).to || null : null;   // nobody replies to themselves out of nowhere
     p.replies.push(r); made.push(r);
+    if (x.id) batch[String(x.id).toLowerCase().replace(/^#/, "")] = r.id;
   }
   return made;
 }
 /* tell the player about replies to them */
 function notifyReplies(W, p, made) {
-  for (const r of made) { const par = replyById(p, r.to); if ((par && par.a === "me") || (!par && p.a === "me" && !r.bulk)) { const A = authorInfo(W, r.a); notify("reply", `${A.name} replied to you: “${String(r.t).slice(0, 60)}”`, { post: p.id, focus: r.id }); } }
+  for (const r of made) { const par = replyById(p, r.to); if ((par && isMine(par.a)) || (!par && isMine(p.a) && !r.bulk)) { const A = authorInfo(W, r.a); notify("reply", `${A.name} replied to you: “${String(r.t).slice(0, 60)}”`, { post: p.id, focus: r.id }); } }
 }
 function pushDM(cid, f, t, at) { const W = S.W; (W.dms[cid] || (W.dms[cid] = [])).push({ f, t, day: W.day, ts: at || Date.now() }); }
 /* who's online: each character keeps their own hours (some are night owls) and drifts on and off */
@@ -1230,9 +1327,10 @@ setInterval(() => {
 function proactiveDM(dm) {
   if (!dm || !dm.text) return;
   const W = S.W;
+  if (isBlocked(W, cleanHandle(dm.handle))) return;
   let c = findCharByHandle(W, dm.handle);
   if (c && (c.kind === "news" || !c.unlocked)) return;
-  if (!c) { if (!dm.handle) return; c = promoteNPC(W, dm.handle, dm.name, dm); }   // a new account slides into your DMs
+  if (!c) { if (!dm.handle) return; c = promoteNPC(W, dm.handle, dm.name, dm); if (!c) return; }   // a new account slides into your DMs
   pushDM(c.id, "them", String(dm.text));
   notify("dm", `${c.name} sent you a message`, { dm: c.id });
 }
@@ -1271,21 +1369,23 @@ function checkAch() {
 }
 
 /* ================= AI actions ================= */
-const REPLY_SHAPE = `{"handle":"@handle of a listed character, a recurring account, or a NEW account","name":"display name","text":"reply text","reply_to":"what it answers (see THREAD RULES)","bio":"NEW accounts only","pic":"NEW accounts only"}`;
-const THREAD_RULE = `THREAD RULES (like real X): replies form threads. Each reply's "reply_to" says what it answers. People answer the post, but they also reply to each other: agree, argue, dunk, joke, correct, gang up, defend the player. Characters behave according to their relationships with each other.`;
+const REPLY_SHAPE = `{"id":"n1","handle":"@handle of a listed character, a recurring account, or a NEW account","name":"display name","text":"reply text","reply_to":"exactly what it answers (see THREAD RULES)","bio":"NEW accounts only","pic":"NEW accounts only"}`;
+const THREAD_RULE = `THREAD RULES (like real X): replies form threads. Give every reply in your list an "id" (n1, n2, n3…). "reply_to" names exactly the message it answers. A reply to another reply must respond directly to what THAT reply said (its point, joke or insult) and make sense as an answer to it; never hang a reply under someone it isn't talking to. A general reaction answers the post. People answer the post, but they also reply to each other: agree, argue, dunk, joke, correct, gang up, defend the player. Characters behave according to their relationships with each other.`;
 const POST_SHAPE = `{"handle":"@handle","name":"display name","text":"post text","image":"photo description or null","image_tags":"2-3 word photo-search phrase for that photo, or null","bio":"NEW accounts only","pic":"NEW accounts only"}`;
 const DM_SHAPE = `{"handle":"@listed character, or a random/recurring account who would slide into the player's DMs","name":"display name","bio":"NEW accounts only","pic":"NEW accounts only","text":"private message to the player"}`;
 const CROWD_RULE = `RANDOM ACCOUNTS: most of the crowd are random accounts who belong in this world and care about the topic at hand. Each one has ONE clear identity: handle, display name, bio, profile picture and posts all match (e.g. someone obsessed with magical plants posts as @magical_plant_freak, bio "my mandrakes are my children", pic "bonsai tree"). When the player posts about something, people who care about it show up. Reuse RECURRING ACCOUNTS when they fit and keep them consistent; invent new ones when the topic calls for it. For every NEW account give "bio" (max 80 chars) and "pic" (their profile picture as a 2-4 word photo-search phrase naming one real object, animal or place that fits them, e.g. "bonsai tree", "black kitten", "old cauldron", "owl at night"; never a person or a name). Canon or listed characters never need bio or pic.`;
 function failed(e) { const m = aiErr(e); if (m) toast(m); }
 
-async function makePost(text, photo, quoteId) {
+async function makePost(text, photo, quoteId, extra = {}) {
   const W = S.W, me = W.me;
   if (!text.trim() && !photo) return;
   if (guard()) return;
   const useViral = S.view.boostViral && me.boosts.viral > 0;
   const useClout = S.view.boostClout && me.boosts.clout > 0;
   snapshot();
-  const p = { id: uid("p"), a: "me", t: text.trim(), img: mkImg(photo), day: W.day, ts: Date.now(), likes: 0, rts: 0, views: 0, replies: [], pending: true };
+  const p = { id: uid("p"), a: extra.alt ? "alt" : "me", t: text.trim(), img: mkImg(photo), day: W.day, ts: Date.now(), likes: 0, rts: 0, views: 0, replies: [], pending: true };
+  if (extra.up && p.img) p.img.up = extra.up;
+  if (extra.poll && extra.poll.length >= 2) p.poll = { opts: extra.poll.map(t => ({ t, v: 0 })) };
   const qp = quoteId && W.posts.find(x => x.id === quoteId); if (qp) p.q = qp.id;
   W.posts.unshift(p);
   if (useViral) me.boosts.viral--; if (useClout) me.boosts.clout--;
@@ -1293,15 +1393,16 @@ async function makePost(text, photo, quoteId) {
   setBusy("People are seeing your post…"); render();
   const prompt = `${ctx(W)}
 
-THE PLAYER JUST POSTED:
-"${p.t}"${p.img ? `\nwith a photo: ${p.img.d}` : ""}${qp ? `\nIt QUOTES this post by @${handleOf(W, qp.a)}: "${String(qp.t).slice(0, 240)}" (the quoted person and their friends will likely react)` : ""}
+${p.a === "alt" ? `THIS IS A POST ON THE PLAYER'S SECRET ALT @${W.me.alt.handle} ("${W.me.alt.name}"). Only these close friends follow it and can see or reply: ${altFriends(W).map(c => "@" + c.handle).join(", ") || "nobody"}. They know it's the player. Nobody else sees it or knows about it${W.me.alt.exposed ? " (except that the alt was exposed earlier, so people know it's the player)" : ""}. Replies only from those close friends (0-4), likes/views tiny, followers_change 0, no character_posts, no news_post.
+` : ""}THE PLAYER JUST POSTED:
+"${p.t}"${p.img ? `\nwith a photo${p.img.up ? " the player took/uploaded" : ""}: ${p.img.d}` : ""}${qp ? `\nIt QUOTES this post by @${handleOf(W, qp.a)}: "${String(qp.t).slice(0, 240)}" (the quoted person and their friends will likely react)` : ""}
 ${useViral ? "VIRAL BOOST ACTIVE: this post must blow up (outcome viral, huge reach) unless it is truly offensive.\n" : ""}${useClout ? "CLOUT BOOST ACTIVE: more characters notice, follower gain is bigger.\n" : ""}
 Simulate how this world reacts, like a real Twitter/X timeline. Judge the post honestly: funny or clever posts gain humor; confident, mysterious, cool or iconic posts gain aura; cringe, rude or controversial posts can flop or get the player cancelled, more often at higher drama levels. Characters react according to their personality and their relationship with the player. Random accounts are fans, haters, stans, meme pages and lurkers.
 Scale the numbers to the player's ${me.followers} followers: a normal post gets views about 0.5-3x followers and likes about 2-15% of views; viral gets 10-60x views; a flop gets very little.
-${IMG_RULE}
+${p.poll ? `It is a POLL with options: ${p.poll.opts.map((o, i) => `${i + 1}) ${o.t}`).join("   ")}. The crowd votes (realistic numbers for the reach) and people argue about it in the replies.\n` : ""}${IMG_RULE}
 
 Reply with ONLY this JSON:
-{"outcome":"normal|viral|flop|drama|cancelled",
+{"outcome":"normal|viral|flop|drama|cancelled",${p.poll ? `\n"poll_votes":[${p.poll.opts.map(() => 0).join(",")}],` : ""}
 "headline":"one short punchy line describing the outcome",
 "likes":0,"reposts":0,"views":0,
 "followers_change":0,"humor_change":0,"aura_change":0,
@@ -1314,7 +1415,7 @@ Reply with ONLY this JSON:
 ${MEM_SHAPE},
 "memory":"one sentence recording what happened"}
 ${CROWD_RULE}
-${THREAD_RULE} Here "reply_to" is "post" (answers the player's post) or "@handle" of an earlier reply in your list (a reply to that reply).
+${THREAD_RULE} Here "reply_to" is "post" (answers the player's post) or the id of an earlier reply in your list (e.g. "n1").
 Rules: 3-7 replies, mostly random accounts (recurring or new) plus listed characters who would plausibly see it; at least one should answer another reply. humor_change and aura_change between -10 and 10. relationship change between -15 and 15. character_posts 0-2 (only listed characters). dm only if it really fits.`;
   try {
     const r = await ai(prompt, "scene");
@@ -1322,8 +1423,10 @@ Rules: 3-7 replies, mostly random accounts (recurring or new) plus listed charac
     p.pending = false;
     p.likes = Math.max(0, Math.round(num(r.likes))); p.rts = Math.max(0, Math.round(num(r.reposts))); p.views = Math.max(p.likes, Math.round(num(r.views)));
     if (out !== "normal") p.tag = out;
-    const madeR = addThreadReplies(W, p, (r.replies || []).map(x => Object.assign({}, x, { reply_to: x && x.reply_to && String(x.reply_to).startsWith("@") ? x.reply_to : "post" })), {}, null, 8, Math.max(3, p.likes / 8));
-    for (const x of madeR) { const par = replyById(p, x.to); if (par && par.a === "me") notifyReplies(W, p, [x]); }
+    if (p.poll && Array.isArray(r.poll_votes)) p.poll.opts.forEach((o, i) => o.v = Math.max(0, Math.round(num(r.poll_votes[i]))));
+    if (p.a === "alt") { const ok = new Set(altFriends(W).map(c => c.handle.toLowerCase())); r.replies = (r.replies || []).filter(x => x && ok.has(cleanHandle(x.handle).toLowerCase())); r.character_posts = []; r.news_post = null; r.followers_change = 0; r.likes = Math.min(num(r.likes), ok.size); r.views = Math.min(num(r.views), ok.size + 1); }
+    const madeR = addThreadReplies(W, p, r.replies, {}, null, 8, Math.max(3, p.likes / 8));
+    for (const x of madeR) { const par = replyById(p, x.to); if (par && isMine(par.a)) notifyReplies(W, p, [x]); }
     const d = applyStats(r, useClout ? 2 : 1);
     const rels = applyRels(r.relationship_changes);
     addPosts(r.character_posts);
@@ -1338,7 +1441,7 @@ Rules: 3-7 replies, mostly random accounts (recurring or new) plus listed charac
     showOutcome(out, r.headline, d, rels);
   } catch (e) {
     restoreSnap(); failed(e);
-    S.view.draft = text; S.view.photoDraft = photo || ""; S.view.photoOpen = !!photo;
+    S.view.draft = text; S.view.photoDraft = photo || ""; S.view.photoOpen = !!photo; S.view.upPhoto = extra.up || null;
   } finally { setBusy(null); render(); }
 }
 
@@ -1357,9 +1460,9 @@ THREAD — original post by @${handleOf(W, p.a)}:
 Replies so far (oldest first):
 ${T.lines || "(none)"}
 
-The player (@${W.me.handle}) just replied [#me] to ${target ? `${T.num(target.id)} (@${handleOf(W, target.a)})` : "the original post"}: "${mine.t}"
+The player (@${W.me.handle}) just replied online [#me] to ${target ? `${T.num(target.id)} (@${handleOf(W, target.a)})` : "the original post"}: "${mine.t}"
 Simulate 1-4 follow-up replies. Whoever the player answered usually responds; others may pile on, take sides or start their own side-arguments.
-${THREAD_RULE} Here "reply_to" is "#me" (the player's new reply), "#n" (a listed reply), "post", or "@handle" of an earlier reply in your list.
+${THREAD_RULE} Here "reply_to" is "#me" (the player's new reply), "#n" (a listed reply), "post", or the id of an earlier reply in your list (e.g. "n1").
 ${CROWD_RULE}
 Reply with ONLY this JSON:
 {"replies":[${REPLY_SHAPE}],"likes_on_player_reply":0,"humor_change":0,"aura_change":0,"followers_change":0,
@@ -1394,13 +1497,13 @@ Replies so far (oldest first):
 ${T.lines || "(none)"}
 
 The conversation keeps going without the player: write 2-5 new replies${focusId ? ` mostly under ${T.num(focusId)}` : ""}. People answer the post and each other (and may answer the player's replies).
-${THREAD_RULE} Here "reply_to" is "#n" (a listed reply), "post", or "@handle" of an earlier reply in your list.
+${THREAD_RULE} Here "reply_to" is "#n" (a listed reply), "post", or the id of an earlier reply in your list (e.g. "n1").
 ${CROWD_RULE}
 Reply with ONLY this JSON: {"replies":[${REPLY_SHAPE}],"memory":"one sentence, or empty"}`;
   try {
     const r = await ai(prompt, "scene");
     const live = S.W.posts.find(x => x.id === postId);
-    const made = addThreadReplies(S.W, live, (r.replies || []).map(x => Object.assign({}, x, { reply_to: x && x.reply_to ? x.reply_to : "post" })), T.idx, null, 5);
+    const made = addThreadReplies(S.W, live, r.replies, T.idx, null, 5);
     made.forEach(x => x.bulk = true); notifyReplies(S.W, live, made); made.forEach(x => delete x.bulk);
     if (r.memory) remember(r.memory);
     saveWorld();
@@ -1457,6 +1560,7 @@ async function nextDay(opts = {}) {
   const locked = W.chars.filter(c => !c.unlocked && c.kind !== "news").map(c => c.name).join(", ");
   const needSummary = W.summary ? W.log.length > 22 : W.log.length > 16;   // fold old memory into "the story so far" (keeps prompts short)
   const gossipDay = !opts.opening && (W.day + step) % 7 === 0;
+  const leaks = leakSources(W);
   const prompt = `${ctx(W)}
 People who exist in this world but are not in the player's circle yet: ${locked || "-"}
 
@@ -1477,14 +1581,19 @@ Reply with ONLY this JSON:
 "reputation":"a short new thing people now say about the player, or null",
 ${MEM_SHAPE},
 "new_ties":[{"a":"@character","b":"@character","type":"short label, e.g. Dating, Broke up, Rivals, Secret alliance","note":"short","secret":false}],
-"secret_out":"if a secret of the player's comes out today, the name of the person it involves, else null",${needSummary ? `
+"secret_out":"if a secret of the player's comes out today, the name of the person it involves, else null",${leaks.lines ? `
+"leak":{"handle":"@who posts it","source":"one id from SCREENSHOTS","text":"their caption"} or null,` : ""}${needSummary ? `
 "story_so_far":"rewrite the WHOLE story so far in 6-9 sentences: who the player is now, key relationships, reputation, open plotlines and secrets",` : ""}
 "memory":"one sentence: the headline of this day"}
 ${CROWD_RULE}
+POLLS: now and then (rarely) a random post is a poll: give it "poll":["option 1","option 2"(,…up to 4)] and "poll_votes":[numbers].
 CHARACTERS HAVE THEIR OWN LIVES: relationships between characters evolve and cause drama even without the player (new couples, break-ups, feuds, alliances). "new_ties" lists 0-1 such changes, only when today's story clearly creates one.
 SECRETS: at drama level 3+ a secret (the player's or between characters) may start leaking as a rumour when the story makes it plausible; whoever is involved reacts. Don't force it.${gossipDay ? `
-WEEKLY GOSSIP ROUNDUP: today the gossip or news account's "news_post" is a roundup of the week's rumours about the player and their circle.` : ""}
-${THREAD_RULE} For posts made today, "replies" are 0-3 replies each; "reply_to" is "post" or "@handle" of an earlier reply under the same post.
+WEEKLY GOSSIP ROUNDUP: today the gossip or news account's "news_post" is a roundup of the week's rumours about the player and their circle.` : ""}${leaks.lines ? `
+SCREENSHOTS that could leak (people screenshot everything):
+${leaks.lines}
+"leak" is set only when the drama makes sense (deleted posts and edits are the juiciest; a DM leaks only through the person who received it; an alt post only through a close friend). Usually null.` : ""}
+${THREAD_RULE} For posts made today, "replies" are 0-3 replies each; "reply_to" is "post" or the id of an earlier reply under the same post.
 Counts: character_posts 2-4 (listed characters only), random_posts 3-5 (recurring or new random accounts), stories 1-3 (most stories have an image), events exactly 2. Use null where nothing fits.`;
   try {
     const r = await ai(prompt, "big");
@@ -1498,7 +1607,7 @@ Counts: character_posts 2-4 (listed characters only), random_posts 3-5 (recurrin
     if (Array.isArray(r.trends)) W.trends = r.trends.slice(0, 5).map(String);
     applyStats(r);
     remember(r.memory || "A new day started"); addRep(r.reputation);
-    applyCharMem(r.character_memories); applyTies(r.new_ties); applySecretOut(r.secret_out);
+    applyCharMem(r.character_memories); applyTies(r.new_ties); applySecretOut(r.secret_out); applyLeak(r.leak, leaks.map);
     if (needSummary && typeof r.story_so_far === "string" && r.story_so_far.length > 80) { W.summary = r.story_so_far.slice(0, 1600); W.log = W.log.slice(-10); }
     if ((r.events || []).length) notify("event", `Day ${W.day}: ${r.events.length} new events are waiting in Explore`);
     checkAch(); saveWorld();
@@ -1630,7 +1739,7 @@ function addCustomToWorld(libId) {
 /* ================= rendering ================= */
 const app = $("#app");
 const scrollMem = {};
-function viewKey() { const v = S.view; return v.screen === "home" ? "home" : v.post ? "post:" + v.post + ":" + (v.focus || "") : v.dm ? "dm:" + v.dm : v.group ? "group:" + v.group : "tab:" + v.tab; }
+function viewKey() { const v = S.view; return v.screen === "home" ? "home" : v.search ? "search:" + v.search.q : v.post ? "post:" + v.post + ":" + (v.focus || "") : v.dm ? "dm:" + v.dm : v.group ? "group:" + v.group : "tab:" + v.tab; }
 function render() {
   const sc = $(".scroll", app); if (sc) scrollMem[S.lastKey] = sc.scrollTop;
   const ae = document.activeElement, aeId = ae && ae.id && app.contains(ae) ? ae.id : null;
@@ -1703,19 +1812,21 @@ function renderWorld() {
   const W = S.W, v = S.view;
   const unN = W.notifs.filter(n => !n.read && shown(n)).length, unD = unreadDMs(W);
   let body;
-  if (v.post) body = viewThread();
+  if (v.search) body = viewSearch();
+  else if (v.post) body = viewThread();
   else if (v.dm) body = viewChat();
   else if (v.group) body = viewGroup();
   else body = ({ feed: viewFeed, explore: viewExplore, dms: viewDMs, notifs: viewNotifs, profile: viewProfile }[v.tab] || viewFeed)();
   const tab = (id, icon, label, n) => `<button data-act="tab" data-id="${id}" ${v.tab === id && !v.post && !v.dm && !v.group ? 'aria-current="page"' : ""}>${ic(icon)}${n ? `<span class="dot num">${n > 9 ? "9+" : n}</span>` : ""}<span>${label}</span></button>`;
   return `
   <header class="top gut"><div class="row" style="gap:6px">
-    <button class="iconbtn" data-act="${v.post || v.dm || v.group ? "back" : "home"}" aria-label="Back">${ic("back")}</button>
+    <button class="iconbtn" data-act="${v.post || v.dm || v.group || v.search ? "back" : "home"}" aria-label="Back">${ic("back")}</button>
     <div class="grow" style="line-height:1.2">
       <div style="font-family:var(--font-display);font-size:17px" class="ell">${esc(W.emoji)} ${esc(W.name)}</div>
       <div class="tiny muted ell">Day ${W.day} · ${esc(W.calendar ? dateLabel(W) : W.sandbox ? eraLabel(W.sandbox) + " · " + W.sandbox.place : MADNESS[W.madness])}</div>
     </div>
     ${meterPill()}
+    <button class="iconbtn" data-act="search" aria-label="Search">${ic("search")}</button>
     <button class="iconbtn" data-act="rewind" aria-label="Rewind" title="Rewind your last action" ${S.snaps.length ? "" : 'style="opacity:.35"'}>${ic("rewind")}</button>
   </div></header>
   ${body}
@@ -1726,19 +1837,23 @@ function renderWorld() {
 
 function authorInfo(W, a) {
   if (a === "me") return { name: W.me.name, handle: W.me.handle, av: W.me.av, key: "me", verified: W.me.followers >= 10000, kind: "me" };
-  if (a && typeof a === "object") { const n = W.npcs && W.npcs[String(a.h).toLowerCase()]; return { name: a.n, handle: a.h, av: { e: a.e, c: a.c, st: a.st, pic: a.pic || (n && n.pic) || derivePic(a.n, a.h) }, key: a.h, verified: false, kind: "rand" }; }
+  if (a === "alt") { const al = W.me.alt || { name: W.me.name, handle: W.me.handle, av: W.me.av }; return { name: al.name, handle: al.handle, av: al.av, key: "alt", verified: false, kind: "me" }; }
+  if (a && typeof a === "object") { const n = W.npcs && W.npcs[String(a.h).toLowerCase()]; const src = n && n.impostorOf && (n.impostorOf === "me" ? W.me : W.chars.find(c => c.id === n.impostorOf)); return { name: a.n, handle: a.h, av: { e: a.e, c: a.c, st: a.st, pic: a.pic || (n && n.pic) || derivePic(a.n, a.h), img: src && src.av && src.av.img }, key: a.h, verified: false, kind: "rand", suspended: !!(n && n.suspended) }; }
   const c = W.chars.find(x => x.id === a) || { name: "user", handle: "user", av: { e: "🙂" }, id: "x" };
   return { name: c.name, handle: c.handle, av: c.av, key: c.id, verified: c.kind === "news" || num(c.followers) >= 10000, kind: c.kind || "char", id: c.id };
 }
-const profA = A => A.kind === "rand" ? "rand:" + A.handle : A.kind === "me" ? "me" : A.id;
+const profA = A => A.kind === "rand" ? "rand:" + A.handle : A.kind === "me" ? "me" : A.id;   // the alt opens your profile too
 const TAGS = { viral: ["viral", "🔥 Viral"], cancelled: ["cancel", "💀 Cancelled"], flop: ["news", "🥶 Flopped"], drama: ["drama", "🍿 Drama"], news: ["news", "📰 News"] };
 function postHTML(p) {
   const W = S.W, A = authorInfo(W, p.a), tg = p.tag && TAGS[p.tag];
   return `<article class="post gut" data-act="openPost" data-id="${esc(p.id)}">
     <div data-act="profileOf" data-a="${esc(profA(A))}">${avatar(A.av, A.key, "", A.kind === "news" ? "news" : "")}</div>
     <div class="grow">
-      <div class="who"><span class="name">${esc(A.name)}</span>${A.verified ? badge() : ""}<span class="handle">@${esc(A.handle)} · day ${p.day}</span></div>
-      ${p.t ? `<div class="text">${esc(p.t)}</div>` : ""}
+      <div class="who"><span class="name">${esc(A.name)}</span>${A.verified ? badge() : ""}${p.a === "alt" ? `<span title="Private alt">${ic("lock")}</span>` : ""}<span class="handle">@${esc(A.handle)} · day ${p.day}${p.edited ? " · Edited" : ""}</span></div>
+      ${isMine(p.a) ? `<button class="pmore" data-act="postMenu" data-id="${esc(p.id)}" aria-label="Post options">${ic("more")}</button>` : ""}
+      ${p.t ? `<div class="text">${richText(p.t)}</div>` : ""}
+      ${pollHTML(p)}
+      ${shotHTML(p)}
       ${photoHTML(p.img)}
       ${quoteHTML(p)}
       ${p.pending ? `<div class="tiny muted" style="margin-top:6px">Posting…</div>` : ""}
@@ -1752,6 +1867,39 @@ function postHTML(p) {
     </div></article>`;
 }
 
+function pollHTML(p) {
+  if (!p.poll) return ""; const tot = p.poll.opts.reduce((n, o) => n + num(o.v), 0), show = isMine(p.a) || p.poll.mine != null;
+  return `<div class="poll">${p.poll.opts.map((o, i) => { const pc = tot ? Math.round(num(o.v) / tot * 100) : 0; return show
+    ? `<div class="pollbar${p.poll.mine === i ? " mine" : ""}"><span class="fill" style="width:${pc}%"></span><span class="lbl">${esc(o.t)}${p.poll.mine === i ? " ✓" : ""}</span><b class="num">${pc}%</b></div>`
+    : `<button class="pollopt" data-act="vote" data-id="${esc(p.id)}" data-i="${i}">${esc(o.t)}</button>`; }).join("")}<div class="tiny muted">${fmt(tot)} votes${p.pending ? " · counting…" : ""}</div></div>`;
+}
+/* a screenshot someone posted of the player's post, edit, DM or alt */
+function shotHTML(p) {
+  if (!p.shot) return ""; const W = S.W, sh = p.shot;
+  const label = { deleted: "deleted post", edit: "post before it was edited", dm: "private DM" + (sh.to ? " to " + sh.to : ""), alt: "private alt post", post: "post" }[sh.kind] || "post";
+  return `<div class="shot"><div class="tiny muted">📸 Screenshot · ${esc(label)}</div><div class="row" style="gap:6px;margin-top:6px">${avatar(sh.kind === "alt" && W.me.alt ? W.me.alt.av : W.me.av, sh.kind === "alt" ? "alt" : "me", "xs")}<b class="small">${esc(sh.name)}</b><span class="tiny muted">@${esc(sh.handle)}</span></div><div class="small" style="margin-top:4px;white-space:pre-wrap">${esc(sh.text)}</div></div>`;
+}
+/* what could leak as a screenshot: deleted posts, edited originals, DMs the player sent, alt posts */
+function leakSources(W) {
+  const map = {}, lines = [];
+  (W.deleted || []).slice(-4).forEach((d, i) => { map["X" + (i + 1)] = { kind: d.alt ? "alt" : "deleted", text: d.t, alt: d.alt }; lines.push(`[X${i + 1}] the player's DELETED ${d.alt ? "alt " : ""}post: "${String(d.t).slice(0, 160)}"`); });
+  W.posts.filter(p => isMine(p.a) && p.edits && p.edits.length).slice(0, 3).forEach((p, i) => { map["E" + (i + 1)] = { kind: "edit", text: p.edits[0], alt: p.a === "alt" }; lines.push(`[E${i + 1}] what the player's post said BEFORE they edited it: "${String(p.edits[0]).slice(0, 160)}"`); });
+  const sent = []; for (const cid in W.dms) for (const m of W.dms[cid]) if (m.f === "me") sent.push({ cid, t: m.t, ts: m.ts });
+  sent.sort((a, b) => b.ts - a.ts).slice(0, 6).forEach((m, i) => { const c = W.chars.find(x => x.id === m.cid); if (!c) return; map["D" + (i + 1)] = { kind: "dm", text: m.t, to: c.name, toId: c.id }; lines.push(`[D${i + 1}] the player's private DM to ${c.name} (@${c.handle}): "${String(m.t).slice(0, 160)}"`); });
+  if (W.me.alt && !W.me.alt.exposed) W.posts.filter(p => p.a === "alt").slice(0, 4).forEach((p, i) => { map["A" + (i + 1)] = { kind: "alt", text: p.t, alt: true }; lines.push(`[A${i + 1}] a post on the player's secret alt @${W.me.alt.handle} (only close friends see it): "${String(p.t).slice(0, 160)}"`); });
+  return { map, lines: lines.join("\n") };
+}
+function applyLeak(lk, map) {
+  const W = S.W; if (!lk || !lk.source || !map[String(lk.source).toUpperCase()]) return;
+  const src = map[String(lk.source).toUpperCase()];
+  if (src.kind === "dm") { const c = findCharByHandle(W, lk.handle); if (!c || c.id !== src.toId) lk.handle = (W.chars.find(x => x.id === src.toId) || {}).handle || lk.handle; }   // only the person who got the DM has it
+  const made = addPosts([{ handle: lk.handle, name: lk.name, text: String(lk.text || "receipts 📸"), bio: lk.bio, pic: lk.pic }], "drama")[0]; if (!made) return;
+  const alt = src.alt && W.me.alt;
+  made.shot = { kind: src.kind, text: String(src.text).slice(0, 400), to: src.to || "", name: alt ? W.me.alt.name : W.me.name, handle: alt ? W.me.alt.handle : W.me.handle };
+  if (src.kind === "alt" && W.me.alt) { W.me.alt.exposed = true; remember(`Everyone now knows @${W.me.alt.handle} is ${W.me.name}'s secret alt`); }
+  remember(`@${handleOf(W, made.a)} leaked a screenshot of ${W.me.name}'s ${src.kind === "dm" ? "DM to " + src.to : src.kind === "deleted" ? "deleted post" : src.kind === "edit" ? "post before the edit" : "alt post"}`);
+  notify("rep", `@${handleOf(W, made.a)} posted a screenshot of your ${src.kind === "dm" ? "DM" : src.kind === "alt" ? "alt post" : src.kind === "edit" ? "post before you edited it" : "deleted post"}!`, { post: made.id });
+}
 function quoteHTML(p) {
   const W = S.W, q = p.q && W.posts.find(x => x.id === p.q); if (!p.q) return "";
   if (!q) return `<div class="quote small muted">This post is unavailable</div>`;
@@ -1761,11 +1909,13 @@ function quoteHTML(p) {
 /* one reply row; `line` draws the thread connector down to the next reply */
 function replyHTML(p, r, o = {}) {
   const W = S.W, R = authorInfo(W, r.a), kids = kidsOf(p, r.id).length;
+  if (!R.suspended && (isBlocked(W, R.handle) || hasMuted(W, r.t))) return `<div class="post gut reply${o.line ? " has-line" : ""}" style="cursor:default"><div class="avcol"><div class="av sm" style="background:var(--surface-2)"><span>${isBlocked(W, R.handle) ? "⛔" : "🔇"}</span></div>${o.line ? '<span class="tline"></span>' : ""}</div><div class="grow small muted" style="padding-top:8px">${isBlocked(W, R.handle) ? "You blocked this account." : "Hidden: contains a word you muted."}</div></div>`;
+  if (R.suspended) return `<div class="post gut reply${o.line ? " has-line" : ""}" style="cursor:default"><div class="avcol"><div class="av sm" style="background:var(--surface-2)"><span>🚫</span></div>${o.line ? '<span class="tline"></span>' : ""}</div><div class="grow small muted" style="padding-top:8px">This post is from a suspended account.</div></div>`;
   return `<div class="post gut reply${o.line ? " has-line" : ""}${o.big ? " focus" : ""}" data-act="openReply" data-post="${esc(p.id)}" data-id="${esc(r.id)}">
     <div class="avcol"><div data-act="profileOf" data-a="${esc(profA(R))}">${avatar(R.av, R.key, o.big ? "" : "sm", R.kind === "news" ? "news" : "")}</div>${o.line ? '<span class="tline"></span>' : ""}</div>
     <div class="grow"><div class="who"><span class="name">${esc(R.name)}</span>${R.verified ? badge() : ""}<span class="handle">@${esc(R.handle)}</span></div>
       <div class="small muted">Replying to <span style="color:var(--blue)">@${esc(parentHandle(W, p, r))}</span></div>
-      <div class="text"${o.big ? ' style="font-size:17px"' : ""}>${esc(r.t)}</div>
+      <div class="text"${o.big ? ' style="font-size:17px"' : ""}>${richText(r.t)}</div>
       <div class="acts num" style="max-width:260px">
         <button data-act="replyTo" data-post="${esc(p.id)}" data-id="${esc(r.id)}" aria-label="Reply">${ic("reply")}${kids ? fmt(kids) : ""}</button>
         <button data-act="likeReply" data-post="${esc(p.id)}" data-id="${esc(r.id)}" class="${r.liked ? "on-like" : ""}" aria-label="Like">${ic("heart")}${fmt(r.likes)}</button>
@@ -1774,10 +1924,21 @@ function replyHTML(p, r, o = {}) {
 /* a reply and the start of its own thread (follows the player's branch first) */
 function chainHTML(p, top, depth = 2) {
   const chain = [top]; let cur = top;
-  while (chain.length <= depth) { const k = kidsOf(p, cur.id); if (!k.length) break; cur = k.find(x => x.a === "me") || k.find(x => kidsOf(p, x.id).some(y => y.a === "me")) || k[0]; chain.push(cur); }
+  while (chain.length <= depth) { const k = kidsOf(p, cur.id); if (!k.length) break; cur = k.find(x => isMine(x.a)) || k.find(x => kidsOf(p, x.id).some(y => isMine(y.a))) || k[0]; chain.push(cur); }
   const hidden = descCount(p, top.id) - (chain.length - 1);
   return chain.map((r, i) => replyHTML(p, r, { line: i < chain.length - 1 })).join("")
     + (hidden > 0 ? `<button class="morelink gut" data-act="openReply" data-post="${esc(p.id)}" data-id="${esc(top.id)}">Show ${hidden} more repl${hidden === 1 ? "y" : "ies"}</button>` : "");
+}
+
+/* who the player follows: their circle, plus their own accounts */
+function follows(W, a) { if (isMine(a)) return true; if (typeof a === "string") { const c = W.chars.find(x => x.id === a); return !!(c && (c.iFollow || c.unlocked)); } const c = a && findCharByHandle(W, a.h); return !!(c && (c.iFollow || c.unlocked)); }
+/* what the player sees: hides suspended, blocked and muted; For you mixes in what's popular */
+function visiblePost(W, p) { const A = authorInfo(W, p.a); return !A.suspended && !isBlocked(W, A.handle) && !hasMuted(W, p.t); }
+function feedPosts(W, tab) {
+  const list = W.posts.filter(p => visiblePost(W, p));
+  if (tab === "following") return list.filter(p => follows(W, p.a));
+  const score = p => p.day * 10 + Math.log10(1 + num(p.likes) + 3 * num(p.rts)) + (isMine(p.a) ? 1.5 : 0) + (p.tag === "viral" ? 2 : 0);
+  return [...list].sort((a, b) => score(b) - score(a) || b.ts - a.ts);
 }
 
 /* ---------- feed ---------- */
@@ -1795,22 +1956,30 @@ function viewFeed() {
       ${others.map(storyItem).join("")}
     </div>
     <div class="composer gut">
-      ${avatar(me.av, "me")}
+      ${v.asAlt && me.alt ? avatar(me.alt.av, "alt") : avatar(me.av, "me")}
       <div class="grow">
         <label for="composer" class="sr">New post</label>
         <textarea id="composer" data-grow data-draft="draft" placeholder="What's happening?" maxlength="600">${esc(v.draft || "")}</textarea>
         ${v.quote && W.posts.find(x => x.id === v.quote) ? `<div class="row" style="align-items:flex-start;gap:6px"><div class="grow">${quoteHTML({ q: v.quote })}</div><button class="iconbtn" data-act="quoteOff" aria-label="Remove quote">${ic("x")}</button></div>` : ""}
-        ${v.photoOpen ? `<div class="row" style="margin-top:6px"><label for="photoIn" class="sr">Describe your photo</label><input class="in" id="photoIn" data-draft="photoDraft" maxlength="200" placeholder="Describe your photo (e.g. mirror selfie in a red jacket)" value="${esc(v.photoDraft || "")}"><button class="iconbtn" data-act="photoToggle" aria-label="Remove photo">${ic("x")}</button></div>` : ""}
+        ${v.pollOpen ? `<div class="col" style="gap:6px;margin-top:8px">${(v.poll || ["", ""]).map((o, i) => `<input class="in" data-pl="${i}" maxlength="60" value="${esc(o)}" placeholder="Option ${i + 1}">`).join("")}${(v.poll || []).length < 4 ? `<button class="linkbtn" data-act="pollAdd">+ Add option</button>` : ""}</div>` : ""}
+        ${v.upPhoto ? `<div class="row" style="margin-top:8px;align-items:flex-start;gap:8px"><img src="${esc(v.upPhoto)}" class="upthumb" alt="">
+          <div class="grow col" style="gap:6px">${v.seeing ? `<div class="thinking" style="padding:0"><span class="spin"></span>AI is looking at your photo…</div>` : ""}<label for="photoIn" class="sr">What's in the photo</label><input class="in" id="photoIn" data-draft="photoDraft" maxlength="200" placeholder="What's in the photo? (people react to this)" value="${esc(v.photoDraft || "")}"></div>
+          <button class="iconbtn" data-act="upPhotoOff" aria-label="Remove photo">${ic("x")}</button></div>`
+        : v.photoOpen ? `<div class="row" style="margin-top:6px"><label for="photoIn" class="sr">Describe your photo</label><input class="in" id="photoIn" data-draft="photoDraft" maxlength="200" placeholder="Describe your photo (e.g. mirror selfie in a red jacket)" value="${esc(v.photoDraft || "")}"><button class="iconbtn" data-act="photoToggle" aria-label="Remove photo">${ic("x")}</button></div>` : ""}
         <div class="bar">
-          <button class="boost" data-act="photoToggle" aria-pressed="${!!v.photoOpen}">📷 Photo</button>
+          <button class="boost" data-act="pollToggle" aria-pressed="${!!v.pollOpen}">📊 Poll</button>
+          <label class="boost" style="cursor:pointer">🖼️ Gallery<input type="file" accept="image/*" data-up="post" hidden></label>
+          <button class="boost" data-act="photoToggle" aria-pressed="${!!v.photoOpen && !v.upPhoto}">📷 Photo idea</button>
           <button class="boost" data-act="boost" data-id="viral" aria-pressed="${!!v.boostViral}" ${me.boosts.viral ? "" : "disabled style='opacity:.5'"}>🚀 Viral ×${me.boosts.viral}</button>
           <button class="boost" data-act="boost" data-id="clout" aria-pressed="${!!v.boostClout}" ${me.boosts.clout ? "" : "disabled style='opacity:.5'"}>📣 Clout ×${me.boosts.clout}</button>
+          ${me.alt ? `<button class="boost" data-act="asAlt" aria-pressed="${!!v.asAlt}">${v.asAlt ? "🔒 @" + esc(me.alt.handle) : "👤 Main"}</button>` : ""}
           <span class="grow"></span>
-          <button class="btn accent sm" data-act="post" ${isBusy() ? "disabled" : ""}>${v.quote ? "Quote" : "Post"}</button>
+          <button class="btn accent sm" data-act="post" ${isBusy() ? "disabled" : ""}>${v.quote ? "Quote" : v.asAlt && me.alt ? "Post to alt" : "Post"}</button>
         </div>
       </div>
     </div>
-    ${W.posts.length ? W.posts.map(postHTML).join("") : `<div class="empty"><div class="em">📝</div>No posts yet. Make your first one.</div>`}
+    <div class="feedtabs gut"><button data-act="feedTab" data-id="foryou" aria-pressed="${(v.feedTab || "foryou") === "foryou"}">For you</button><button data-act="feedTab" data-id="following" aria-pressed="${v.feedTab === "following"}">Following</button></div>
+    ${(() => { const list = feedPosts(W, v.feedTab || "foryou"); return list.length ? list.map(postHTML).join("") : `<div class="empty"><div class="em">📝</div>${v.feedTab === "following" ? "No posts from people you follow yet." : "No posts yet. Make your first one."}</div>`; })()}
     <div style="height:30px"></div>
   </main>`;
 }
@@ -1825,7 +1994,9 @@ function viewThread() {
   const mainPost = `<div class="thread-main gut">
       <div class="row" data-act="profileOf" data-a="${esc(profA(A))}" style="cursor:pointer">${avatar(A.av, A.key, "", A.kind === "news" ? "news" : "")}
         <div class="grow"><div class="row" style="gap:5px"><b class="ell">${esc(A.name)}</b>${A.verified ? badge() : ""}</div><div class="small muted">@${esc(A.handle)}</div></div></div>
-      ${p.t ? `<div class="text">${esc(p.t)}</div>` : ""}
+      ${p.t ? `<div class="text">${richText(p.t)}</div>` : ""}
+      ${pollHTML(p)}
+      ${shotHTML(p)}
       ${photoHTML(p.img)}
       ${quoteHTML(p)}
       ${tg ? `<span class="tag ${tg[0]}">${tg[1]}</span>` : ""}
@@ -1847,7 +2018,7 @@ function viewThread() {
       ${replyHTML(p, focus, { big: true })}
       ${kidsOf(p, focus.id).map(k => chainHTML(p, k, 1)).join("")}`;
   } else {
-    const tops = kidsOf(p, null).sort((a, b) => (b.a === "me") - (a.a === "me") || a.ts - b.ts);
+    const tops = kidsOf(p, null).sort((a, b) => isMine(b.a) - isMine(a.a) || a.ts - b.ts);
     body = mainPost + tops.map(t => chainHTML(p, t)).join("");
   }
   return `<main class="scroll">
@@ -1883,7 +2054,7 @@ function viewExplore() {
       <div class="small muted">Start a new day: characters post, new events appear, and what you did comes back around.</div>
       <button class="btn block" style="margin-top:12px" data-act="nextDay" ${isBusy() ? "disabled" : ""}>${ic("sun")} Start day ${W.day + 1}</button>
     </section>
-    ${W.trends.length ? `<section class="sec gut"><h3>Trending</h3><div class="row wrap" style="gap:8px">${W.trends.map((t, i) => `<button class="chip" data-act="useTrend" data-id="${esc(t)}"><span class="muted tiny num">${i + 1}</span>${esc(t)}</button>`).join("")}</div></section>` : ""}
+    ${W.trends.length ? `<section class="sec gut"><h3>Trending</h3><div class="row wrap" style="gap:8px">${W.trends.map((t, i) => `<button class="chip" data-act="tagSearch" data-id="${esc(t)}"><span class="muted tiny num">${i + 1}</span>${esc(t)}</button>`).join("")}</div></section>` : ""}
     ${W.act && !W.act.done ? `<section class="sec gut"><div class="card"><div class="kicker">Scene in progress</div><div style="font-weight:700;margin:4px 0">${esc(W.act.title)}</div><button class="btn sm accent" data-act="resumeAct">Continue</button></div></section>` : ""}
     <section class="sec gut">
       <h3>Events</h3>
@@ -1967,9 +2138,28 @@ function viewChat() {
     </div></main>
     <div class="replybox gut">
       <label for="dmIn" class="sr">Message</label>
-      <textarea id="dmIn" data-grow data-draft="dmDraft" rows="1" placeholder="Message ${esc(c.name)}" maxlength="500">${esc(S.view.dmDraft || "")}</textarea>
-      <button class="send" data-act="sendDM" data-id="${esc(c.id)}" aria-label="Send" ${isBusy() ? "disabled" : ""}>${ic("send", 2.4)}</button>
+      ${isBlocked(W, c.handle) ? `<div class="grow small muted">You blocked @${esc(c.handle)}. <button class="linkbtn" data-act="blockToggle" data-id="${esc(c.handle)}">Unblock</button></div>` : `<textarea id="dmIn" data-grow data-draft="dmDraft" rows="1" placeholder="Message ${esc(c.name)}" maxlength="500">${esc(S.view.dmDraft || "")}</textarea>`}
+      ${isBlocked(W, c.handle) ? "" : `<button class="send" data-act="sendDM" data-id="${esc(c.id)}" aria-label="Send" ${isBusy() ? "disabled" : ""}>${ic("send", 2.4)}</button>`}
     </div>`;
+}
+
+/* ---------- search: people and posts ---------- */
+function viewSearch() {
+  const W = S.W, q = String(S.view.search.q || "").trim(), ql = q.toLowerCase().replace(/^@/, "");
+  const people = !q ? [] : [
+    ...W.chars.filter(c => (c.name + " " + c.handle).toLowerCase().includes(ql)).map(c => ({ a: c.id, A: authorInfo(W, c.id), sub: c.bio })),
+    ...Object.values(W.npcs || {}).filter(n => !n.suspended && (n.n + " " + n.h).toLowerCase().includes(ql) && !findCharByHandle(W, n.h)).map(n => ({ a: npcAuthor(n), A: authorInfo(W, npcAuthor(n)), sub: n.bio }))
+  ].slice(0, 12);
+  const posts = !q ? [] : W.posts.filter(p => visiblePost(W, p) && (String(p.t).toLowerCase().includes(q.toLowerCase()) || p.replies.some(r => String(r.t).toLowerCase().includes(q.toLowerCase())))).slice(0, 30);
+  const tag = /^#/.test(q);
+  return `<main class="scroll">
+    <div class="gut row" style="padding-block:12px;gap:8px"><label for="searchIn" class="sr">Search</label><input class="in" id="searchIn" value="${esc(q)}" placeholder="Search people, posts or #tags" autocomplete="off"><button class="btn sm accent" data-act="searchGo">Search</button></div>
+    ${!q ? `<div class="gut small muted">Trending: ${W.trends.map(t => `<button class="tagl" data-act="tagSearch" data-id="${esc(t)}">${esc(t)}</button>`).join(" ") || "-"}</div>` : ""}
+    ${tag ? `<div class="gut" style="padding-bottom:10px"><button class="btn sm soft" data-act="useTrend" data-id="${esc(q)}">${ic("edit")} Post about ${esc(q)}</button></div>` : ""}
+    ${people.length ? `<div class="gut kicker" style="padding-top:6px">People</div>${people.map(x => `<div class="item gut row" data-act="profileOf" data-a="${esc(profA(x.A))}" style="padding-block:10px;cursor:pointer;border-bottom:1px solid var(--line)">${avatar(x.A.av, x.A.key, "sm")}<div class="grow"><b class="ell">${esc(x.A.name)}</b> <span class="tiny muted">@${esc(x.A.handle)}</span><div class="tiny muted ell">${esc(x.sub || "")}</div></div></div>`).join("")}` : ""}
+    ${q ? `<div class="gut kicker" style="padding-top:12px">Posts</div>${posts.map(postHTML).join("") || `<div class="empty small">Nothing found for “${esc(q)}”.</div>`}` : ""}
+    <div style="height:30px"></div>
+  </main>`;
 }
 
 /* ---------- group chats ---------- */
@@ -2035,7 +2225,7 @@ Reply with ONLY this JSON:
     const Wl = S.W, gl = Wl.groups.find(x => x.id === gid);
     let at = Date.now() + rnd(1500, 5000);
     for (const m of (Array.isArray(r.messages) ? r.messages : []).slice(0, 5)) {
-      const c = m && m.text && findCharByHandle(Wl, m.handle); if (!c || !gl.members.includes(c.id)) continue;
+      const c = m && m.text && findCharByHandle(Wl, m.handle); if (!c || !gl.members.includes(c.id) || isBlocked(Wl, c.handle)) continue;
       gl.msgs.push({ f: c.id, t: String(m.text), day: Wl.day, ts: at }); at += rnd(1200, 4000);
     }
     applyRels(r.relationship_changes); applyCharMem(r.character_memories);
@@ -2063,7 +2253,7 @@ function gauge(label, val, color, max = 100) {
 function viewProfile() {
   const W = S.W, me = W.me, G = S.G;
   const circle = W.chars.filter(c => c.unlocked && c.kind !== "news"), locked = W.chars.filter(c => !c.unlocked && c.kind !== "news");
-  const myPosts = W.posts.filter(p => p.a === "me"), doneM = me.milestones.filter(m => m.done).length;
+  const myPosts = W.posts.filter(p => isMine(p.a)), doneM = me.milestones.filter(m => m.done).length;
   return `<main class="scroll">
     <section class="gut" style="padding-block:18px 14px;border-bottom:1px solid var(--line)">
       <div class="row" style="align-items:flex-start">${avatar(me.av, "me", "lg")}<span class="grow"></span>
@@ -2087,7 +2277,12 @@ function viewProfile() {
       <p style="margin:6px 0 0">${esc(me.goal || "-")}</p>
     </section>
     <section class="sec gut">
-      <h3 style="margin:0 0 4px">Relationships</h3>
+      <div class="row"><h3 class="grow" style="margin:0">🔒 Private alt account</h3>${me.alt ? `<button class="btn ghost sm" data-act="altEdit">${ic("edit")} Edit</button>` : ""}</div>
+      ${me.alt ? `<div class="row" style="margin-top:8px">${avatar(me.alt.av, "alt", "sm")}<div class="grow"><b>${esc(me.alt.name)}</b> <span class="tiny muted">@${esc(me.alt.handle)}</span><div class="tiny muted">${me.alt.exposed ? '<span style="color:var(--bad)">Exposed: everyone knows it\'s you</span>' : "Only your close friends see it"} · ${me.alt.friends.length} close friend${me.alt.friends.length === 1 ? "" : "s"}</div></div></div>`
+        : `<div class="small muted" style="margin:4px 0 8px">A secret second account (a "priv"/finsta) that only close friends follow. Post your real thoughts there, but screenshots can leak.</div><button class="btn sm soft" data-act="altEdit">${ic("plus")} Create alt account</button>`}
+    </section>
+    <section class="sec gut">
+      <div class="row"><h3 class="grow" style="margin:0 0 4px">Relationships</h3><button class="btn sm soft" data-act="relMap">🕸️ Map</button></div>
       <div class="tiny muted" style="margin-bottom:6px">Facts of your world. Everyone acts on them unless they're secret.</div>
       ${bondForm("pb", me.bonds || [], W.chars.filter(c => c.kind !== "news").map(c => c.name))}
     </section>
@@ -2138,6 +2333,49 @@ function viewProfile() {
   </main>`;
 }
 
+function sheetAlt() {
+  const W = S.W, f = S.altForm, circle = W.chars.filter(c => c.unlocked && c.kind !== "news");
+  return head(W.me.alt ? "Alt account" : "Create alt account") + `<div class="sh-body"><div class="col gut" style="gap:14px">
+    <div class="field"><label for="alName">Name</label><input class="in" id="alName" data-al="name" maxlength="40" value="${esc(f.name)}" placeholder="e.g. 🌙 not mia"></div>
+    <div class="field"><label for="alHandle">Username (@)</label><input class="in" id="alHandle" data-al="handle" maxlength="24" value="${esc(f.handle)}" placeholder="e.g. mia.priv"></div>
+    <div class="field"><label for="alPic">Profile picture (a few words)</label><input class="in" id="alPic" data-al="pic" maxlength="80" value="${esc(f.pic)}" placeholder="e.g. black cat"></div>
+    <div class="field"><label>Close friends (only they can see it)</label>${circle.map(c => `<label class="row" style="cursor:pointer;gap:10px"><input type="checkbox" data-alf="${esc(c.id)}" ${f.friends.includes(c.id) ? "checked" : ""} style="width:20px;height:20px;accent-color:var(--accent)">${avatar(c.av, c.id, "xs")}<span class="grow">${esc(c.name)}</span></label>`).join("") || `<div class="small muted">Add people to your circle first.</div>`}</div>
+    <button class="btn accent" data-act="altSave">Save</button>
+    ${W.me.alt ? `<button class="btn ghost" data-act="altDelete" style="color:var(--bad)">Delete alt account</button>` : ""}
+  </div></div>`;
+}
+/* who's tied to whom: you in the middle, your circle around you, others they're tied to outside */
+function sheetMap() {
+  const W = S.W, me = W.me, circle = W.chars.filter(c => c.unlocked && c.kind !== "news").slice(0, 14);
+  const tied = new Set(); (W.ties || []).forEach(t => { tied.add(t.a); tied.add(t.b); });
+  const outer = W.chars.filter(c => c.kind !== "news" && !circle.includes(c) && tied.has(c.id)).slice(0, 10);
+  const C = 190, pos = { me: [C, C] };
+  circle.forEach((c, i) => { const a = -Math.PI / 2 + i * 2 * Math.PI / circle.length; pos[c.id] = [C + 110 * Math.cos(a), C + 110 * Math.sin(a)]; });
+  outer.forEach((c, i) => { const a = -Math.PI / 2 + (i + 0.5) * 2 * Math.PI / Math.max(outer.length, 1); pos[c.id] = [C + 172 * Math.cos(a), C + 172 * Math.sin(a)]; });
+  const pic = av => av && (av.img || PICS[av.pic]);
+  const node = (id, av, label, r) => { const [x, y] = pos[id], src = pic(av); return `<g data-act="mapNode" data-id="${esc(id)}" transform="translate(${x.toFixed(1)},${y.toFixed(1)})" style="cursor:pointer">
+      <circle r="${r + 2}" style="fill:var(--surface);stroke:var(--line);stroke-width:2"/>${src ? `<image href="${esc(src)}" x="${-r}" y="${-r}" width="${2 * r}" height="${2 * r}" clip-path="url(#clip${r})" preserveAspectRatio="xMidYMid slice"/>` : `<text text-anchor="middle" dy="${r / 2.6}" style="font-size:${r}px">${esc((av && av.e) || "🙂")}</text>`}
+      <text y="${r + 14}" text-anchor="middle" style="font-size:11px;fill:var(--fg);font-weight:600">${esc(label)}</text></g>`; };
+  const meEdges = circle.map(c => { const [x, y] = pos[c.id], col = c.rel >= 0 ? "var(--good)" : "var(--bad)"; return `<line x1="${C}" y1="${C}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" style="stroke:${col};stroke-width:${(1 + Math.abs(c.rel) / 30).toFixed(1)};opacity:.65"/>${c.chem ? `<text x="${(C + (x - C) * .55).toFixed(1)}" y="${(C + (y - C) * .55).toFixed(1)}" text-anchor="middle" style="font-size:9px;fill:var(--muted)">${esc(c.chem)}</text>` : ""}`; }).join("");
+  const tieEdges = (W.ties || []).filter(t => pos[t.a] && pos[t.b]).map(t => { const [x1, y1] = pos[t.a], [x2, y2] = pos[t.b]; return `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" style="stroke:var(--violet);stroke-width:1.6;stroke-dasharray:4 3;opacity:.8"/><text x="${((x1 + x2) / 2).toFixed(1)}" y="${((y1 + y2) / 2 - 3).toFixed(1)}" text-anchor="middle" style="font-size:9px;fill:var(--violet)">${esc(t.type)}${t.secret ? " 🤫" : ""}</text>`; }).join("");
+  return head("Relationship map") + `<div class="sh-body"><div class="gut col" style="gap:10px">
+    ${circle.length ? `<svg viewBox="-20 -20 420 440" style="width:100%;height:auto;overflow:visible" role="img" aria-label="Relationship map">
+      <defs><clipPath id="clip16"><circle r="16"/></clipPath><clipPath id="clip22"><circle r="22"/></clipPath></defs>
+      ${meEdges}${tieEdges}
+      ${circle.map(c => node(c.id, c.av, c.name.split(" ")[0], 16)).join("")}${outer.map(c => node(c.id, c.av, c.name.split(" ")[0], 16)).join("")}
+      ${node("me", me.av, "You", 22)}
+    </svg>
+    <div class="tiny muted row wrap" style="gap:12px"><span><b style="color:var(--good)">━</b> likes you</span><span><b style="color:var(--bad)">━</b> dislikes you</span><span><b style="color:var(--violet)">┅</b> their own relationships</span><span>Thicker = stronger. Tap anyone to open them.</span></div>` : `<div class="empty small">Add people to your circle to see the map.</div>`}
+  </div></div>`;
+}
+function sheetPostMenu() {
+  const p = S.W.posts.find(x => x.id === S.menuPost); if (!p) return head("");
+  return head("Your post") + `<div class="sh-body"><div class="col gut" style="gap:10px">
+    ${S.editing ? `<label for="editIn" class="small muted">Edit post (people may have seen or screenshotted the old version)</label><textarea class="in" id="editIn" maxlength="600">${esc(p.t)}</textarea><button class="btn accent" data-act="postEditSave">Save edit</button>`
+      : `<button class="btn soft" data-act="postEdit">${ic("edit")} Edit post</button>
+    ${S.delAsk ? `<button class="btn" style="background:var(--bad);color:#fff" data-act="postDelYes">Yes, delete it</button><div class="tiny muted">Deleted posts can still live on in screenshots.</div>` : `<button class="btn ghost" data-act="postDel" style="color:var(--bad)">${ic("trash")} Delete post</button>`}`}
+  </div></div>`;
+}
 function sheetRepost() {
   const p = S.W.posts.find(x => x.id === S.rtPost); if (!p) return head("");
   return head("Repost") + `<div class="sh-body"><div class="col gut" style="gap:10px">
@@ -2587,6 +2825,7 @@ function applyBonds(W, bonds) {
 }
 function startBonds(W, c) { W.me.bonds = (c.bonds || []).map(b => Object.assign({}, b)); W.me.rep = parseRep(c.rep); applyBonds(W, W.me.bonds); }
 /* each character keeps a few things they personally remember about the player */
+const altFriends = W => ((W.me.alt && W.me.alt.friends) || []).map(id => W.chars.find(c => c.id === id)).filter(Boolean);
 function applyCharMem(list) {
   const W = S.W; if (!W || !Array.isArray(list)) return;
   for (const x of list) { if (!x || !x.note) continue; const c = findCharByHandle(W, x.handle); if (!c || c.kind === "news") continue; c.mem = (c.mem || []).concat(String(x.note).slice(0, 140)).slice(-6); }
@@ -2807,7 +3046,15 @@ function sheetSettings() {
     <button class="btn soft" data-act="api">${ic("key")} AI providers &amp; usage</button>
     <div class="field"><label>Theme</label>${chips([["", "System"], ["light", "Light"], ["dark", "Dark"]], G.theme, "setTheme")}</div>
     <div class="field"><label>Photos in posts & stories</label>${chips([["ai", "AI photos"], ["stock", "Stock photos"], ["off", "Off"]], G.imgMode, "setImg")}
-      <div class="tiny muted">AI photos are drawn free by Pollinations to match each post when it lets us in; otherwise a matching free photo from Wikimedia Commons is used. Stock photos load instantly but are random.</div></div>
+      <div class="tiny muted">AI photos are drawn to match each post and story. Free by default with AI Horde (no account; volunteer GPUs, so each picture takes about a minute and fills in by itself). If drawing fails, a matching photo from Wikimedia Commons is used. Stock photos load instantly but are random.</div>
+      ${G.imgMode === "ai" ? `<div class="card col" style="gap:8px;margin-top:6px">
+        <b class="small">Faster pictures (optional, free)</b>
+        <label class="small muted" for="hordeKeyIn">AI Horde key: free at <a href="https://aihorde.net/register" target="_blank" rel="noopener">aihorde.net/register</a>; puts you ahead of anonymous users in the queue.</label>
+        <div class="row"><input class="in" id="hordeKeyIn" type="password" autocomplete="off" placeholder="AI Horde API key" value="${esc(G.hordeKey || "")}"><button class="btn sm soft" data-act="hordeKeySave">Save</button></div>
+        <label class="small muted" for="cfUrlIn">Your Cloudflare image AI (FLUX, a few seconds per picture, ~200 a day free). Setup steps are in README.md.</label>
+        <div class="row"><input class="in" id="cfUrlIn" inputmode="url" autocomplete="off" placeholder="https://your-worker.workers.dev" value="${esc(G.cfImageURL || "")}"><button class="btn sm soft" data-act="cfUrlSave">Save</button></div>
+        <div class="tiny muted">Now drawing with: <b>${G.cfImageURL ? "your Cloudflare FLUX (AI Horde as backup)" : "AI Horde" + (G.hordeKey ? " (with your key)" : " (anonymous)")}</b> · pictures waiting: ${IMGQ.q.length + IMGQ.running}</div>
+      </div>` : ""}</div>
     <div class="field"><label>Profile pictures</label>${chips([["aesthetic", "Aesthetic (AI)"], ["cartoon", "Illustrated"], ["emoji", "Emoji only"]], avMode(), "setAvMode")}
       <div class="tiny muted">Aesthetic pictures are free photos from Wikimedia Commons matched to each account's vibe (a bonsai for a plant nerd, a black kitten for a cat person). Real photos you set on a profile always show.</div></div>
     <button class="btn soft" data-act="library">🧬 My characters (${G.library.length})</button>
@@ -2908,6 +3155,11 @@ function sheetWorldSettings() {
     <label class="row card" style="padding:12px;cursor:pointer"><div class="grow"><b>Mute news accounts</b><div class="small muted">Stop news and tea pages from posting about you</div></div><input type="checkbox" id="wsMute" ${W.muteNews ? "checked" : ""} style="width:22px;height:22px;accent-color:var(--accent)"></label>
     <button class="btn accent" data-act="wsSave">Save</button>
     ${W.sandbox ? `<button class="btn soft" data-act="setup">📜 Story setup (era, place, role, situation)</button>` : ""}
+    <div class="card col" style="gap:8px"><b>Blocked &amp; muted</b>
+      ${(W.blocked || []).length ? W.blocked.map(h => `<div class="row small"><span class="grow">⛔ @${esc(h)}</span><button class="btn sm ghost" data-act="blockToggle" data-id="${esc(h)}">Unblock</button></div>`).join("") : `<div class="small muted">No one blocked. Block from anyone's profile.</div>`}
+      <div class="small muted" style="margin-top:4px">Muted words hide posts and replies that contain them.</div>
+      ${(W.muted || []).length ? `<div class="row wrap" style="gap:6px">${W.muted.map((w, i) => `<span class="chip" style="font-size:13px">🔇 ${esc(w)}<button data-act="muteDel" data-id="${i}" aria-label="Unmute" style="display:inline-flex;margin-left:2px">${ic("x")}</button></span>`).join("")}</div>` : ""}
+      <div class="row"><input class="in" id="muteIn" maxlength="40" placeholder="Mute a word or #tag"><button class="btn sm soft" data-act="muteAdd">Mute</button></div></div>
     <div class="card col" style="gap:8px"><b>Backups</b><div class="small muted">A copy of this world is kept on this device the first time you open it each day (last 5). Restore one if something went wrong.</div>
       ${st.bk == null ? `<button class="btn sm soft" data-act="bkLoad" style="align-self:flex-start">Show backups</button>` : st.bk.length ? st.bk.map(b => `<div class="row small"><span class="grow">${new Date(b.ts).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })} · day ${b.day}</span>${st.bkConfirm === b.k ? `<button class="btn sm" style="background:var(--bad);color:#fff" data-act="bkRestore" data-id="${esc(b.k)}">Yes, restore</button>` : `<button class="btn sm soft" data-act="bkAsk" data-id="${esc(b.k)}">Restore</button>`}</div>`).join("") : `<div class="small muted">No backups yet. One is made the first time you open this world each day.</div>`}
       <button class="btn sm ghost" data-act="bkNow" style="align-self:flex-start">Back up now</button></div>
@@ -2955,6 +3207,7 @@ function sheetChar() {
         ${canTalk ? `<div class="row wrap" style="gap:6px">${CHEMS.map(x => `<button class="chip" style="padding:5px 10px;font-size:13px" data-act="setChem" data-id="${esc(x)}" aria-pressed="${c.chem === x}">${esc(x)}</button>`).join("")}</div>` : ""}</div>` : ""}
       ${(c.mem || []).length ? `<div class="card col" style="gap:6px"><b>What ${esc(c.name)} remembers about you</b>${c.mem.map((m, i) => `<div class="row small" style="align-items:flex-start"><span class="grow">• ${esc(m)}</span><button class="iconbtn" style="width:28px;height:28px" data-act="memDel" data-id="${esc(c.id)}" data-i="${i}" aria-label="Forget">${ic("x")}</button></div>`).join("")}</div>` : ""}
       ${c.kind !== "news" ? tieCard(c) : ""}
+      <div class="row wrap" style="gap:8px"><button class="btn sm ghost" data-act="blockToggle" data-id="${esc(c.handle)}">${isBlocked(W, c.handle) ? "Unblock" : "⛔ Block"}</button></div>
       ${canTalk ? `<div class="row"><button class="btn accent grow" data-act="dmFromProfile" data-id="${esc(c.id)}">Message</button><button class="btn ghost grow" data-act="actFromProfile" data-id="${esc(c.id)}">Invite to activity</button></div>` : c.kind === "news" ? "" : `<div class="row"><span class="grow small muted">Not in your circle.</span><button class="btn sm accent" data-act="unlock" data-id="${esc(c.id)}">Add to circle</button></div>`}
       <div class="row wrap" style="gap:8px"><button class="btn sm ghost" data-act="charEdit" data-id="${esc(c.id)}">${ic("edit")} Edit character</button>${canTalk ? `<button class="btn sm ghost" data-act="charRemove" data-id="${esc(c.id)}">Remove from circle</button>` : ""}</div>
     </div>
@@ -3063,6 +3316,35 @@ function setPhoto(url) {
   if (t.kind === "me") openSheet(sheetEditMe); else { S.charView = t.id; openSheet(sheetChar); }
   toast(url ? "Profile photo updated" : "Back to the illustrated avatar");
 }
+/* a post photo: keeps its shape, longest side 640px */
+function shrinkPhoto(file, max = 640) {
+  return new Promise((res, rej) => {
+    const fr = new FileReader(); fr.onerror = rej;
+    fr.onload = () => { const im = new Image(); im.onerror = rej; im.onload = () => { const k = Math.min(1, max / Math.max(im.width, im.height)), cv = document.createElement("canvas"); cv.width = Math.round(im.width * k); cv.height = Math.round(im.height * k); cv.getContext("2d").drawImage(im, 0, 0, cv.width, cv.height); res(cv.toDataURL("image/jpeg", 0.78)); }; im.src = fr.result; };
+    fr.readAsDataURL(file);
+  });
+}
+/* ask a vision-capable model what's in the photo, once; every later prompt just uses that text */
+async function visionDescribe(url) {
+  const tries = [];
+  if (S.G.geminiKey) tries.push(["gemini", provModel("gemini")]);
+  const gv = S.G.groqKey && ((S.pmodels && S.pmodels.groq) || []).find(x => /llama-4|vision|scout|maverick/i.test(x)); if (gv) tries.push(["groq", gv]);
+  const ov = S.G.apiKey && (S.models || []).find(m => /vl\b|-vl|vision|llama-4|gemma-3|gemma-4|pixtral|qwen.*vl|nemotron.*vl/i.test(m.id)); if (ov) tries.push(["openrouter", ov.id]);
+  for (const [p, m] of tries) {
+    if (cooling(p, m) || BADKEY[p]) continue;
+    try {
+      const text = await callProvider(p, [{ role: "user", content: [{ type: "text", text: 'Describe this photo for a social-media role-play game in one or two short sentences: who or what is in it, the setting, the mood and any notable details. Reply with ONLY JSON: {"description":"..."}' }, { type: "image_url", image_url: { url } }] }], 500, m);
+      const o = parseJSON(text), d = o && typeof o.description === "string" ? o.description : String(text || "").replace(/[{}"]/g, "").trim();
+      if (d && d.length > 8) return d.slice(0, 280);
+    } catch (e) { if (e.status === 429 || e.status === 402) coolDown(p, m, e); }
+  }
+  throw { message: "no vision model" };
+}
+function attachPostPhoto(url) {
+  const v = S.view; v.upPhoto = url; v.photoOpen = true; v.photoDraft = ""; v.seeing = true; render();
+  visionDescribe(url).then(d => { if (S.view.upPhoto === url && !S.view.photoDraft) S.view.photoDraft = d; }, () => toast("No AI could look at the photo. Describe it in a few words so people react to it."))
+    .finally(() => { S.view.seeing = false; render(); });
+}
 function shrinkImage(file) {
   return new Promise((res, rej) => {
     const fr = new FileReader();
@@ -3131,8 +3413,10 @@ function sheetNPC() {
       <div class="row">${avatar(info.av, info.key, "lg")}<div class="grow"><h2 style="font-size:20px">${esc(info.name)}</h2><div class="muted">@${esc(info.handle)}</div>
         <div class="small num" style="margin-top:4px"><b>${fmt(followers)}</b> <span class="muted">followers</span>${n ? ` · <span class="muted">around since day ${n.first || 1}</span>` : ""}</div></div></div>
       ${bio ? `<div style="white-space:pre-wrap">${esc(bio)}</div>` : ""}
-      <div class="row"><button class="btn accent grow" data-act="npcFollow" data-id="${esc(info.handle)}">Follow &amp; message</button></div>
-      <div class="tiny muted">Following adds them to your circle so you can DM them, invite them to activities and see them more often.</div>
+      ${n && n.suspended ? `<div class="notice">🚫 This account was suspended${n.impostorOf ? " for impersonation" : ""}.</div>` : `
+      ${n && n.impostorOf ? `<div class="notice" style="background:color-mix(in srgb,var(--bad) 14%,transparent)">⚠️ This account looks like it's pretending to be <b>${n.impostorOf === "me" ? "you" : esc((W.chars.find(c => c.id === n.impostorOf) || {}).name || "someone")}</b> (@${esc(n.h)} vs @${esc(n.impostorOf === "me" ? W.me.handle : (W.chars.find(c => c.id === n.impostorOf) || {}).handle || "")}).</div>` : ""}
+      <div class="row"><button class="btn accent grow" data-act="npcFollow" data-id="${esc(info.handle)}">Follow &amp; message</button><button class="btn ghost" data-act="npcReport" data-id="${esc(info.handle)}">${n && n.impostorOf ? "Report impersonation" : "Report"}</button><button class="btn ghost" data-act="blockToggle" data-id="${esc(info.handle)}">${isBlocked(W, info.handle) ? "Unblock" : "Block"}</button></div>
+      <div class="tiny muted">Following adds them to your circle so you can DM them, invite them to activities and see them more often.</div>`}
     </div>
     ${acts.slice(0, 12).map(x => x.kind === "post" ? postHTML(x.p) : `<div class="post gut" data-act="openPost" data-id="${esc(x.p.id)}"><div style="width:44px"></div><div class="grow"><div class="small muted">Replied to @${esc(authorInfo(W, x.p.a).handle)}</div><div class="text">${esc(x.r.t)}</div></div></div>`).join("") || `<div class="empty small">Nothing posted yet</div>`}
   </div>`;
@@ -3261,7 +3545,7 @@ function showStory() {
   const sv = S.sv;
   if (!sv || sv.ai >= sv.order.length) { S.sv = null; layer.innerHTML = ""; saveWorld(); render(); return; }
   const a = sv.order[sv.ai], list = sv.byA[a], s = list[sv.si]; s.seen = true;
-  const A = authorInfo(S.W, a), src = s.img ? imgSrc(s.img, 720, 1280) : null;
+  const A = authorInfo(S.W, a), src = s.img ? imgSrc(s.img, 576, 1024) : null;
   const ch = S.W.chars.find(c => c.id === a);
   layer.innerHTML = `<div class="sv"><div class="frame">
     <div class="bars">${list.map((x, i) => `<i><b style="width:${i < sv.si ? 100 : 0}%" ${i === sv.si ? 'id="svBar"' : ""}></b></i>`).join("")}</div>
@@ -3322,15 +3606,15 @@ function avEdit(pfx, fn) { if (pfx === "em") keepEditMe(); fn(avTarget(pfx)); re
 const ACT = {
   // navigation
   home() { if (isBusy()) return toast("Wait for the AI to finish first"); flushWorld(); S.view = { screen: "home", tab: "feed" }; S.W = null; S.snaps = []; render(); },
-  back() { if (S.view.post && S.view.focus) { const p = S.W.posts.find(x => x.id === S.view.post), r = p && replyById(p, S.view.focus); S.view.focus = r && r.to || null; S.view.replyTo = null; } else if (S.view.post) S.view.post = null; else if (S.view.dm) { S.view.dm = null; S.view.tab = "dms"; } else if (S.view.group) { S.view.group = null; S.view.tab = "dms"; } render(); },
-  tab(el) { const same = S.view.tab === el.dataset.id && !S.view.post && !S.view.dm && !S.view.group; S.view.tab = el.dataset.id; S.view.post = null; S.view.dm = null; S.view.group = null; render(); if (same) { const sc = $(".scroll", app); if (sc) sc.scrollTop = 0; } },
+  back() { if (S.view.search && !S.view.post) { S.view.search = null; return render(); } if (S.view.post && S.view.focus) { const p = S.W.posts.find(x => x.id === S.view.post), r = p && replyById(p, S.view.focus); S.view.focus = r && r.to || null; S.view.replyTo = null; } else if (S.view.post) S.view.post = null; else if (S.view.dm) { S.view.dm = null; S.view.tab = "dms"; } else if (S.view.group) { S.view.group = null; S.view.tab = "dms"; } render(); },
+  tab(el) { const same = S.view.tab === el.dataset.id && !S.view.post && !S.view.dm && !S.view.group && !S.view.search; S.view.tab = el.dataset.id; S.view.post = null; S.view.dm = null; S.view.group = null; S.view.search = null; render(); if (same) { const sc = $(".scroll", app); if (sc) sc.scrollTop = 0; } },
   async openWorld(el) {
     const id = el.dataset.id; const w = await loadWorld(id);
     if (!w) { toast("Couldn't find this world's save"); S.G.worlds = S.G.worlds.filter(x => x.id !== id); saveMeta(); return render(); }
     normalizeWorld(w); S.W = w; S.snaps = []; S.view = { screen: "world", tab: "feed", post: null, dm: null }; checkAch(); render(); dailyBackup(w);
   },
   newWorld() { if (!hasAI()) return openApi("Add a free AI key (OpenRouter, Groq or Gemini) to build a world."); startCreate(); },
-  openPost(el) { if (S.sheet) closeLayer(); S.view.dm = null; S.view.group = null; S.view.post = el.dataset.id; S.view.focus = null; S.view.replyTo = null; S.view.replyDraft = ""; render(); const sc = $(".scroll", app); if (sc) sc.scrollTop = 0; },
+  openPost(el) { if (S.sheet) closeLayer(); S.view.dm = null; S.view.group = null; S.view.search = null; S.view.post = el.dataset.id; S.view.focus = null; S.view.replyTo = null; S.view.replyDraft = ""; render(); const sc = $(".scroll", app); if (sc) sc.scrollTop = 0; },
   openReply(el) { if (S.sheet) closeLayer(); S.view.dm = null; S.view.post = el.dataset.post; S.view.focus = el.dataset.id; S.view.replyTo = null; render(); const sc = $(".scroll", app); if (sc) sc.scrollTop = 0; },
   replyTo(el) { S.view.post = el.dataset.post; S.view.replyTo = el.dataset.id || null; render(); $("#replyIn")?.focus(); },
   likeReply(el) { const p = S.W.posts.find(x => x.id === el.dataset.post), r = p && replyById(p, el.dataset.id); if (!r) return; r.liked = !r.liked; r.likes = Math.max(0, num(r.likes) + (r.liked ? 1 : -1)); if (r.liked && typeof r.a === "string" && r.a !== "me") { const c = S.W.chars.find(x => x.id === r.a); if (c && c.unlocked && !r.likedOnce) { r.likedOnce = true; c.rel = clamp(c.rel + 1, -100, 100); } } saveWorld(); render(); },
@@ -3352,18 +3636,62 @@ const ACT = {
   },
   // feed
   post() {
-    const t = val("composer"), ph = S.view.photoOpen ? val("photoIn").trim() : "";
-    if (!t.trim() && !ph) return toast("Write something first");
+    const t = val("composer"), ph = S.view.photoOpen ? val("photoIn").trim() : "", up = S.view.upPhoto;
+    if (!t.trim() && !ph && !up) return toast("Write something first");
+    if (up && S.view.seeing) return toast("Wait a second, the AI is still looking at your photo");
     if (!hasAI()) return openApi("Add a free AI key (OpenRouter, Groq or Gemini) to start posting.");
     if (guard()) return;
-    const q = S.view.quote; S.view.draft = ""; S.view.photoDraft = ""; S.view.photoOpen = false; S.view.quote = null; makePost(t, ph, q);
+    const v = S.view, q = v.quote, extra = { up, poll: v.pollOpen ? (v.poll || []).map(x => String(x || "").trim()).filter(Boolean).slice(0, 4) : null, alt: !!(v.asAlt && S.W.me.alt) };
+    if (extra.poll && extra.poll.length < 2) return toast("A poll needs at least 2 options");
+    v.draft = ""; v.photoDraft = ""; v.photoOpen = false; v.quote = null; v.upPhoto = null; v.pollOpen = false; v.poll = ["", ""];
+    makePost(t, ph || (up ? "a photo the player uploaded" : ""), q, extra);
   },
+  altEdit() { const al = S.W.me.alt; S.altForm = { name: al ? al.name : "", handle: al ? al.handle : cleanHandle(S.W.me.handle) + ".priv", pic: al ? al.av.pic || "" : "", friends: al ? [...al.friends] : [] }; openSheet(sheetAlt); },
+  altSave() {
+    const W = S.W, f = S.altForm; f.friends = [...document.querySelectorAll("[data-alf]")].filter(x => x.checked).map(x => x.dataset.alf);
+    const h = cleanHandle(f.handle); if (!f.name.trim() || !h) return toast("Add a name and a username");
+    if (h.toLowerCase() === W.me.handle.toLowerCase() || findCharByHandle(W, h)) return toast("That username is taken");
+    snapshot(); const had = !!W.me.alt;
+    W.me.alt = Object.assign(W.me.alt || { exposed: false }, { name: f.name.trim().slice(0, 40), handle: h, friends: f.friends, av: { e: "🔒", c: hashN(h) % COLORS.length, pic: f.pic.trim() || "black cat" } });
+    remember(had ? `${W.me.name} updated their secret alt @${h}` : `${W.me.name} made a secret alt account @${h}; close friends who follow it: ${f.friends.map(id => (W.chars.find(c => c.id === id) || {}).name).join(", ") || "nobody yet"}`);
+    saveWorld(); closeLayer(); render(); toast(had ? "Alt account saved" : "Alt account created. Switch to it when you post.");
+  },
+  altDelete() { const W = S.W; snapshot(); remember(`${W.me.name} deleted their alt @${W.me.alt.handle}`); W.me.alt = null; S.view.asAlt = false; saveWorld(); closeLayer(); render(); },
+  asAlt() { S.view.asAlt = !S.view.asAlt; render(); },
+  blockToggle(el) {
+    const W = S.W, h = String(el.dataset.id).toLowerCase().replace(/^@/, ""); snapshot(); W.blocked = W.blocked || [];
+    const on = !W.blocked.includes(h); W.blocked = on ? [...W.blocked, h] : W.blocked.filter(x => x !== h);
+    remember(`${W.me.name} ${on ? "blocked" : "unblocked"} @${h}`); saveWorld(); refreshSheet(); render(); toast(on ? `Blocked @${h}` : `Unblocked @${h}`);
+  },
+  muteAdd() { const w = val("muteIn").trim().toLowerCase(); if (!w) return; const W = S.W; W.muted = [...new Set([...(W.muted || []), w])].slice(0, 30); saveWorld(); refreshSheet(); render(); },
+  muteDel(el) { const W = S.W; W.muted.splice(+el.dataset.id, 1); saveWorld(); refreshSheet(); render(); },
+  pollToggle() { S.view.pollOpen = !S.view.pollOpen; if (!S.view.poll || !S.view.poll.length) S.view.poll = ["", ""]; render(); },
+  pollAdd() { S.view.poll = [...(S.view.poll || []), ""].slice(0, 4); render(); },
+  vote(el) { const p = S.W.posts.find(x => x.id === el.dataset.id); if (!p || !p.poll || p.poll.mine != null) return; const i = +el.dataset.i; p.poll.mine = i; p.poll.opts[i].v = num(p.poll.opts[i].v) + 1; saveWorld(); render(); },
+  relMap() { openSheet(sheetMap); },
+  mapNode(el) { if (el.dataset.id === "me") { closeLayer(); return; } S.charView = el.dataset.id; openSheet(sheetChar); },
+  postMenu(el) { S.menuPost = el.dataset.id; S.editing = false; S.delAsk = false; openSheet(sheetPostMenu); },
+  postEdit() { S.editing = true; refreshSheet(); $("#editIn")?.focus(); },
+  postEditSave() {
+    const W = S.W, p = W.posts.find(x => x.id === S.menuPost), t = val("editIn").trim(); if (!p || !t) return;
+    if (t === p.t) { closeLayer(); return; }
+    snapshot(); (p.edits = p.edits || []).push(p.t); remember(`${W.me.name} edited their post from "${p.t.slice(0, 80)}" to "${t.slice(0, 80)}"`); p.t = t; p.edited = true;
+    saveWorld(); closeLayer(); render(); toast("Post edited");
+  },
+  postDel() { S.delAsk = true; refreshSheet(); },
+  postDelYes() {
+    const W = S.W, p = W.posts.find(x => x.id === S.menuPost); if (!p) return;
+    snapshot(); W.deleted = (W.deleted || []).concat({ id: p.id, t: p.t, day: p.day, ts: Date.now(), alt: p.a === "alt" }).slice(-10);
+    W.posts = W.posts.filter(x => x !== p); remember(`${W.me.name} deleted their ${p.a === "alt" ? "alt " : ""}post "${p.t.slice(0, 80)}" (people may have screenshotted it)`);
+    saveWorld(); closeLayer(); S.view.post = null; render(); toast("Post deleted");
+  },
+  upPhotoOff() { S.view.upPhoto = null; S.view.photoOpen = false; S.view.photoDraft = ""; render(); },
   photoToggle() { S.view.photoOpen = !S.view.photoOpen; if (!S.view.photoOpen) S.view.photoDraft = ""; render(); if (S.view.photoOpen) $("#photoIn")?.focus(); },
   boost(el) { const k = el.dataset.id === "viral" ? "boostViral" : "boostClout"; S.view[k] = !S.view[k]; render(); },
   like(el) {
     const p = S.W.posts.find(x => x.id === el.dataset.id); if (!p) return;
     p.liked = !p.liked; p.likes += p.liked ? 1 : -1;
-    if (p.liked && typeof p.a === "string" && p.a !== "me" && !p.likedOnce) { p.likedOnce = true; const c = S.W.chars.find(x => x.id === p.a); if (c && c.unlocked) c.rel = clamp(c.rel + 1, -100, 100); }
+    if (p.liked && typeof p.a === "string" && !isMine(p.a) && !p.likedOnce) { p.likedOnce = true; const c = S.W.chars.find(x => x.id === p.a); if (c && c.unlocked) c.rel = clamp(c.rel + 1, -100, 100); }
     saveWorld(); render();
   },
   rt(el) { const p = S.W.posts.find(x => x.id === el.dataset.id); if (!p) return; S.rtPost = p.id; openSheet(sheetRepost); },
@@ -3380,7 +3708,18 @@ const ACT = {
   svSend(el) { const t = val("svReply"); if (!t.trim() || guard()) return; const s = S.sv.byA[S.sv.order[S.sv.ai]][S.sv.si]; S.sv = null; layer.innerHTML = ""; pushDM(el.dataset.id, "sys", `You replied to their story: “${String(s.t || (s.img && s.img.d) || "").slice(0, 60)}”`); S.view.post = null; S.view.dm = el.dataset.id; S.stickBottom = true; render(); sendDM(el.dataset.id, t); },
   // explore
   nextDay() { if (!hasAI()) return openApi("Add a free AI key (OpenRouter, Groq or Gemini) first."); nextDay(); },
-  useTrend(el) { S.view.tab = "feed"; S.view.draft = (S.view.draft ? S.view.draft + " " : "") + el.dataset.id + " "; render(); $("#composer")?.focus(); },
+  search() { S.view.search = { q: "" }; S.view.post = null; S.view.dm = null; S.view.group = null; render(); $("#searchIn")?.focus(); },
+  searchGo() { S.view.search = { q: val("searchIn").trim() }; render(); },
+  tagSearch(el) { closeLayer(); S.view.search = { q: el.dataset.id }; S.view.post = null; S.view.dm = null; S.view.group = null; render(); const sc = $(".scroll", app); if (sc) sc.scrollTop = 0; },
+  mention(el) {
+    const W = S.W, h = el.dataset.id.toLowerCase();
+    if (h === W.me.handle.toLowerCase() || (W.me.alt && h === W.me.alt.handle.toLowerCase())) { closeLayer(); S.view = Object.assign(S.view, { post: null, dm: null, group: null, search: null, tab: "profile" }); return render(); }
+    const c = findCharByHandle(W, h); if (c) { S.charView = c.id; return openSheet(sheetChar); }
+    if (W.npcs && W.npcs[h]) { S.npcView = W.npcs[h].h; return openSheet(sheetNPC); }
+    toast("@" + el.dataset.id + " doesn't exist (yet)");
+  },
+  feedTab(el) { S.view.feedTab = el.dataset.id; render(); const sc = $(".scroll", app); if (sc) sc.scrollTop = 0; },
+  useTrend(el) { S.view.search = null; S.view.post = null; S.view.tab = "feed"; S.view.draft = (S.view.draft ? S.view.draft + " " : "") + el.dataset.id + " "; render(); $("#composer")?.focus(); },
   eventChoice(el) { if (!hasAI()) return openApi("Add a free AI key (OpenRouter, Groq or Gemini) first."); resolveEvent(el.dataset.id, el.dataset.choice); },
   eventCustom(el) { const t = val("ev_" + el.dataset.id); if (!t.trim()) return toast("Write your move first"); resolveEvent(el.dataset.id, t); },
   actChar(el) { S.view.actChar = el.dataset.id; render(); },
@@ -3421,6 +3760,13 @@ const ACT = {
   addCustom() { S.libAdd = true; S.libForm = null; openSheet(sheetLibrary); },
   addChar() { S.addChar = { q: "", busy: false }; openSheet(sheetAddChar); },
   addCharGo() { addCharAI(); },
+  npcReport(el) {
+    const W = S.W, n = W.npcs && W.npcs[String(el.dataset.id).toLowerCase()]; if (!n) return;
+    if (S.reportAsk !== n.h) { S.reportAsk = n.h; return toast("Tap Report again to confirm"); }
+    S.reportAsk = null; snapshot(); n.suspended = true;
+    remember(`@${n.h}${n.impostorOf === "me" ? ` (an account impersonating ${W.me.name})` : ""} was reported by ${W.me.name} and suspended`);
+    saveWorld(); closeLayer(); render(); toast(`Reported. @${n.h} has been suspended.`);
+  },
   npcFollow(el) {
     const W = S.W; snapshot(); const c = promoteNPC(W, el.dataset.id, null, {});
     if (!(W.dms[c.id] || []).length) pushDM(c.id, "sys", `You followed @${c.handle}`);
@@ -3464,6 +3810,15 @@ const ACT = {
   setAvMode(el) { S.G.avMode = el.dataset.id; saveMeta(); refreshSheet(); render(); },
   setTheme(el) { S.G.theme = el.dataset.id; applyTheme(); saveMeta(); refreshSheet(); render(); },
   setImg(el) { S.G.imgMode = el.dataset.id; saveMeta(); refreshSheet(); render(); if (S.G.imgMode === "ai") pumpImgs(); },
+  hordeKeySave() { S.G.hordeKey = val("hordeKeyIn").trim(); saveMeta(); refreshSheet(); toast(S.G.hordeKey ? "AI Horde key saved" : "AI Horde key removed"); },
+  async cfUrlSave() {
+    const u = val("cfUrlIn").trim().replace(/\/+$/, "");
+    if (u && !/^https:\/\/\S+$/.test(u)) return toast("Paste the full https:// address of your worker");
+    S.G.cfImageURL = u; saveMeta(); refreshSheet();
+    if (!u) return toast("Back to AI Horde");
+    toast("Testing your Cloudflare image AI…");
+    try { await cfDraw("a cup of coffee on a wooden table, photo", false, 7); toast("Cloudflare image AI works ✓"); } catch (e) { toast("It didn't answer: " + (e.message || "error") + ". Check the address and the setup steps."); }
+  },
   library() { S.libAdd = false; S.libForm = null; openSheet(sheetLibrary); },
   lfNew() { S.libForm = { id: null, name: "", handle: "", bio: "", look: "", desc: "", av: { e: "🦊", c: 2, st: "lorelei", sd: uid() } }; refreshSheet(); },
   lfEdit(el) { const l = S.G.library.find(x => x.id === el.dataset.id); if (l) { S.libForm = JSON.parse(JSON.stringify(l)); S.libForm.av = { st: "lorelei", sd: uid(), ...S.libForm.av }; refreshSheet(); } },
@@ -3674,7 +4029,8 @@ document.addEventListener("change", ev => {
   const el = ev.target;
   if (el.id === "smartTog") { S.G.smartRouting = el.checked; saveMeta(); refreshSheet(); }
   if (el.id === "avTog") { S.G.avatars = el.checked; saveMeta(); refreshSheet(); render(); }
-  if (el.dataset && el.dataset.up && el.files && el.files[0]) shrinkImage(el.files[0]).then(url => applyUpload(el.dataset.up, url), () => toast("Couldn't read that image"));
+  if (el.dataset && el.dataset.up === "post" && el.files && el.files[0]) shrinkPhoto(el.files[0]).then(attachPostPhoto, () => toast("Couldn't read that image"));
+  else if (el.dataset && el.dataset.up && el.files && el.files[0]) shrinkImage(el.files[0]).then(url => applyUpload(el.dataset.up, url), () => toast("Couldn't read that image"));
   if (el.id === "ppFile" && el.files && el.files[0]) shrinkImage(el.files[0]).then(setPhoto, () => toast("Couldn't read that image"));
   if (el.dataset && el.dataset.actChange) { const f = ACT[el.dataset.actChange]; if (f) f(el, ev); }
 });
@@ -3689,6 +4045,8 @@ document.addEventListener("input", ev => {
   if (d.acq && S.addChar) S.addChar[d.acq] = el.value;
   if (d.su && S.setup) S.setup[d.su] = el.value;
   if (d.ec && S.editChar) S.editChar[d.ec] = el.value;
+  if (d.al && S.altForm) S.altForm[d.al] = el.value;
+  if (d.pl !== undefined && S.view.poll) S.view.poll[+d.pl] = el.value;
   if (d.ng && S.newGroup) S.newGroup[d.ng] = el.value;
   if (el.id === "wsMad") $("#wsMadL").textContent = `${el.value} · ${MADNESS[el.value]}`;
   if (el.hasAttribute && el.hasAttribute("data-grow")) { el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight, 160) + "px"; }
@@ -3697,7 +4055,7 @@ document.addEventListener("keydown", ev => {
   const el = ev.target;
   if (ev.key === "Escape" && (S.sheet || S.sv)) { if (S.sv) ACT.svClose(); else ACT.close(); return; }
   if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) {
-    const map = { dmIn: "[data-act=sendDM]", replyIn: "[data-act=reply]", actTurn: "[data-act=actSend]", svReply: "[data-act=svSend]", actIn: "[data-act=startAct]", keyIn: "[data-act=keySave]", groqKeyIn: "[data-act=provKeySave][data-p=groq]", geminiKeyIn: "[data-act=provKeySave][data-p=gemini]", acPass: "[data-act=acSubmit]", ppQ: "[data-act=ppSearch]", acQ: "[data-act=addCharGo]", gIn: "[data-act=sendGroup]", cwPic: "[data-act=cwPicGo]", emPic: "[data-act=emPicGo]", ppUrl: "[data-act=ppUrl]", acNew: "[data-act=acNewPass]", modelCustom: "[data-act=modelCustom]", photoIn: "[data-act=post]" };
+    const map = { dmIn: "[data-act=sendDM]", replyIn: "[data-act=reply]", actTurn: "[data-act=actSend]", svReply: "[data-act=svSend]", actIn: "[data-act=startAct]", keyIn: "[data-act=keySave]", groqKeyIn: "[data-act=provKeySave][data-p=groq]", geminiKeyIn: "[data-act=provKeySave][data-p=gemini]", acPass: "[data-act=acSubmit]", ppQ: "[data-act=ppSearch]", acQ: "[data-act=addCharGo]", muteIn: "[data-act=muteAdd]", searchIn: "[data-act=searchGo]", gIn: "[data-act=sendGroup]", cwPic: "[data-act=cwPicGo]", emPic: "[data-act=emPicGo]", ppUrl: "[data-act=ppUrl]", acNew: "[data-act=acNewPass]", modelCustom: "[data-act=modelCustom]", photoIn: "[data-act=post]" };
     if (el.id && el.id.startsWith("ev_")) { ev.preventDefault(); const b = el.parentElement.querySelector("[data-act=eventCustom]"); if (b) run(b, ev); return; }
     if (map[el.id]) { ev.preventDefault(); const b = document.querySelector(map[el.id]); if (b) run(b, ev); return; }
     if (el.id === "composer" && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); ACT.post(); }
@@ -3720,8 +4078,19 @@ function normalizeWorld(w) {
   for (const p of w.posts) { if (!Array.isArray(p.replies)) p.replies = []; p.pending = false; }
   if (!w.npcs || typeof w.npcs !== "object") w.npcs = {};
   if (!Array.isArray(w.me.bonds)) w.me.bonds = [];
+  { // accounts the AI made that copy the player's own @handle or name become clearly-labelled parodies
+    const ph = String(w.me.handle || "").toLowerCase();
+    const copy = h => cleanHandle(h).toLowerCase() === ph;
+    const fixA = a => { if (a && typeof a === "object" && copy(a.h)) { a.h = cleanHandle(w.me.handle) + "_parody"; if (!/parody|fake|fan/i.test(a.n || "")) a.n = `${a.n || w.me.name} (parody)`; } };
+    for (const p of w.posts) { fixA(p.a); for (const r of p.replies || []) fixA(r.a); }
+    for (const k of Object.keys(w.npcs || {})) { const n = w.npcs[k]; if (copy(n.h)) { delete w.npcs[k]; fixA(n); n.bio = n.bio || `parody account · not the real ${w.me.name}`; w.npcs[n.h.toLowerCase()] = n; } }
+    for (const c of w.chars) if (c.npc && copy(c.handle)) { c.handle = cleanHandle(w.me.handle) + "_parody"; if (!/parody|fake|fan/i.test(c.name)) c.name += " (parody)"; }
+  }
   if (!Array.isArray(w.ties)) w.ties = [];
   if (!Array.isArray(w.groups)) w.groups = [];
+  if (!Array.isArray(w.deleted)) w.deleted = [];
+  if (!Array.isArray(w.blocked)) w.blocked = [];
+  if (!Array.isArray(w.muted)) w.muted = [];
   if (!Array.isArray(w.me.rep)) w.me.rep = [];
   for (const c of w.chars) { c.av = c.av || { e: "🙂" }; if (!c.av.pic) Object.assign(c.av, { pic: derivePic(c.name, c.handle, c.bio), picAuto: true }); }
   if (!w.me.av.pic) Object.assign(w.me.av, { pic: derivePic(w.me.name, w.me.handle, w.me.bio), picAuto: true });
